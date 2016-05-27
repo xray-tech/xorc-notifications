@@ -1,0 +1,7 @@
+[package]
+name = "apns2"
+version = "0.1.0"
+authors = ["Julius de Bruijn <julius.debruijn@360dialog.com>"]
+
+[dependencies]
+apns2 = { git = "https://github.com/tkabit/apns2" }
