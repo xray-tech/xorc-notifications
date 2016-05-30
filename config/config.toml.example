@@ -1,0 +1,20 @@
+[rabbitmq]
+queue = "http-requests.queue"
+exchange = "http-requests"
+exchange_type = "fanout"
+error_exchange = "http-responses"
+error_exchange_type = "fanout"
+routing_key = ""
+vhost = "/"
+host = "localhost"
+port = 5672
+login = "guest"
+password = "guest"
+
+[metrics]
+uri = "http://localhost:8086"
+database = "test"
+tick_duration = 10
+login = ""
+password = ""
+application = "requester"

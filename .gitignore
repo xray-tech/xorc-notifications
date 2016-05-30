@@ -1,0 +1,4 @@
+cert/*
+src/events/*
+!src/events/mod.rs
+config/config.toml

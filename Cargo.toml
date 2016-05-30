@@ -4,4 +4,17 @@ version = "0.1.0"
 authors = ["Julius de Bruijn <julius.debruijn@360dialog.com>"]
 
 [dependencies]
-apns2 = { git = "https://github.com/tkabit/apns2" }
+apns2 = { git = "https://github.com/pimeys/apns2" }
+amqp = "*"
+protobuf = "*"
+chan-signal = "*"
+argparse = "*"
+env_logger = "*"
+syslog = "*"
+log = "*"
+toml = "*"
+influent = "*"
+histogram = "*"
+rustc-serialize = "*"
+time = "*"
+hyper = "*"
