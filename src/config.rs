@@ -54,6 +54,8 @@ pub struct RabbitMqConfig {
     pub login: String,
     pub password: String,
     pub routing_key: String,
+    pub response_exchange: String,
+    pub response_exchange_type: String,
 }
 
 #[derive(RustcEncodable, RustcDecodable, Debug)]

@@ -3,6 +3,32 @@ use histogram::Histogram;
 use std::sync::Mutex;
 use time::precise_time_ns;
 
+pub struct Gauge<'a> {
+    pub name: &'a str,
+    value: AtomicUsize,
+}
+
+impl<'a> Gauge<'a> {
+    pub fn new(name: &'a str) -> Gauge<'a> {
+        Gauge {
+            name: name,
+            value: AtomicUsize::new(0),
+        }
+    }
+
+    pub fn increment(&self, value: usize) {
+        self.value.fetch_add(value, Ordering::SeqCst);
+    }
+
+    pub fn decrement(&self, value: usize) {
+        self.value.fetch_sub(value, Ordering::SeqCst);
+    }
+
+    pub fn collect(&self) -> usize {
+        self.value.load(Ordering::SeqCst)
+    }
+}
+
 pub struct Counter<'a> {
     pub name: &'a str,
     value: AtomicUsize,
@@ -21,7 +47,7 @@ impl<'a> Counter<'a> {
     }
 
     pub fn collect(&self) -> usize {
-        self.value.swap(0, Ordering::Relaxed)
+        self.value.load(Ordering::Relaxed)
     }
 }
 
@@ -50,6 +76,7 @@ impl<'a> Timer<'a> {
         }
     }
 
+    #[allow(dead_code)]
     pub fn time<A, F>(&self, f: F) -> A where F: FnOnce() -> A {
         let before = precise_time_ns();
         let res = f();

@@ -23,12 +23,15 @@ mod metrics;
 mod config;
 mod artifactory;
 mod certificate_registry;
+mod producer;
 
 use log::*;
 use syslog::Facility;
 use logger::SyslogLogger;
 use std::sync::{Arc};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc;
+use std::sync::mpsc::{Sender, Receiver};
 use std::thread;
 use std::thread::JoinHandle;
 use chan_signal::{Signal, notify};
@@ -38,6 +41,7 @@ use metrics::sender::MetricsSender;
 use metrics::Metrics;
 use config::Config;
 use certificate_registry::CertificateRegistry;
+use producer::{ResponseProducer, ApnsResponse};
 
 fn setup_logger() {
     match syslog::unix(Facility::LOG_USER) {
@@ -80,10 +84,11 @@ fn main() {
 
     let config               = Arc::new(Config::parse(config_file_location));
     let certificate_registry = Arc::new(CertificateRegistry::new(config.clone()));
+    let (tx_response, rx_response): (Sender<ApnsResponse>, Receiver<ApnsResponse>) = mpsc::channel();
 
     let mut threads : Vec<JoinHandle<_>> = (0..number_of_threads).map(|i| {
         let mut consumer = Consumer::new(control.clone(), metrics.clone(),
-            config.clone(), certificate_registry.clone());
+            config.clone(), certificate_registry.clone(), tx_response.clone());
 
         thread::spawn(move || {
             info!("Starting consumer #{}", i);
@@ -91,6 +96,8 @@ fn main() {
             if let Err(error) = consumer.consume() {
                 error!("Error in consumer: {:?}", error);
             }
+
+            info!("Exiting consumer #{}", i);
         })
     }).collect();
 
@@ -104,8 +111,21 @@ fn main() {
         thread::spawn(move || {
             info!("Starting metrics thread...");
             metrics_sender.run();
+            info!("Exiting metrics thread...");
         })
     });
+
+    threads.push({
+        let mut producer = ResponseProducer::new(config.clone(), rx_response,
+            control.clone(), metrics.clone());
+
+        thread::spawn(move || {
+            info!("Starting response producer thread...");
+            producer.run();
+            info!("Exiting response producer thread...");
+        })
+    });
+
 
     if let Some(_) = exit_signal.recv() {
         info!("Quitting the Apple Push Notification service");

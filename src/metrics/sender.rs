@@ -28,25 +28,35 @@ impl<'a> MetricsSender<'a> {
             database: &self.config.metrics.database,
         }, vec![&self.config.metrics.uri]);
 
-        let duration = Duration::new(self.config.metrics.tick_duration, 0);
-        let counter_name = format!("{}-counters", self.config.metrics.application);
-        let timer_name = format!("{}-timers", self.config.metrics.application);
+        let tick_duration = Duration::new(self.config.metrics.tick_duration, 0);
+        let gauge_name    = format!("{}-gauges", self.config.metrics.application);
+        let counter_name  = format!("{}-counters", self.config.metrics.application);
+        let timer_name    = format!("{}-timers", self.config.metrics.application);
 
         while self.control.load(Ordering::Relaxed) {
-            thread::park_timeout(duration);
+            thread::park_timeout(tick_duration);
 
-            let mut measurements: Vec<Measurement> = self.metrics.counters.as_vec().iter().map(|counter| {
-                (counter.name, counter.collect() as i64)
-            }).filter(|counter| {
-                counter.1 > 0
-            }).map(|counter| {
-                let mut measurement = Measurement::new(&counter_name);
-                measurement.add_tag("metric", counter.0);
+            let mut measurements: Vec<Measurement> = self.metrics.gauges.as_vec().iter().map(|gauge| {
+                (gauge.name, gauge.collect() as i64)
+            }).filter(|gauge| {
+                gauge.1 > 0
+            }).map(|gauge| {
+                let mut measurement = Measurement::new(&gauge_name);
+                measurement.add_tag("metric", gauge.0);
                 measurement.add_tag("hostname", &hostname);
-                measurement.add_field("value", Value::Integer(counter.1));
+                measurement.add_field("value", Value::Integer(gauge.1));
 
                 measurement
             }).collect();
+
+            for (name, value) in self.metrics.counters.as_vec().iter().map(|v| (v.name, v.collect())) {
+                let mut measurement = Measurement::new(&counter_name);
+                measurement.add_tag("metric", name);
+                measurement.add_tag("hostname", &hostname);
+                measurement.add_field("value", Value::Integer(value as i64));
+
+                measurements.push(measurement);
+            }
 
             for timer_result in self.metrics.timers.as_vec().iter().map(|v| v.collect()) {
                 if let Ok(timer) = timer_result {

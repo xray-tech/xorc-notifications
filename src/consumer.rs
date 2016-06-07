@@ -5,13 +5,16 @@ use std::time::Duration;
 use std::io::Cursor;
 use std::thread;
 use amqp::{Session, Channel, Table, Basic, Options};
-use events::apn::Apn;
+use events::push_notification::PushNotification;
 use notifier::Apns2Notifier;
+use apns2::AsyncResponse;
 use protobuf::parse_from_bytes;
 use config::Config;
 use metrics::Metrics;
 use hyper::error::Error;
 use certificate_registry::CertificateRegistry;
+use std::sync::mpsc::Sender;
+use producer::ApnsResponse;
 
 pub struct Consumer<'a> {
     channel: Channel,
@@ -21,6 +24,7 @@ pub struct Consumer<'a> {
     metrics: Arc<Metrics<'a>>,
     config: Arc<Config>,
     certificate_registry: Arc<CertificateRegistry>,
+    tx_response: Sender<ApnsResponse>,
 }
 
 impl<'a> Drop for Consumer<'a> {
@@ -34,7 +38,8 @@ impl<'a> Consumer<'a> {
     pub fn new(control: Arc<AtomicBool>,
                metrics: Arc<Metrics<'a>>,
                config: Arc<Config>,
-               certificate_registry: Arc<CertificateRegistry>) -> Consumer<'a> {
+               certificate_registry: Arc<CertificateRegistry>,
+               tx_response: Sender<(PushNotification, Option<AsyncResponse>)>) -> Consumer<'a> {
 
         let mut session = Session::new(Options {
             vhost: &config.rabbitmq.vhost,
@@ -80,16 +85,15 @@ impl<'a> Consumer<'a> {
             metrics: metrics,
             config: config,
             certificate_registry: certificate_registry,
+            tx_response: tx_response,
         }
     }
 
     pub fn consume(&mut self) -> Result<(), Error> {
-        let wait_duration = Duration::from_millis(100);
-
         while self.control.load(Ordering::Relaxed) {
             for result in self.channel.basic_get(&self.config.rabbitmq.queue, false) {
-                if let Ok(event) = parse_from_bytes::<Apn>(&result.body) {
-                    let notifier = {
+                if let Ok(event) = parse_from_bytes::<PushNotification>(&result.body) {
+                    if let Some(notifier) = {
                         let application_id = event.get_application_id();
 
                         if !self.notifiers.contains_key(application_id) {
@@ -103,24 +107,19 @@ impl<'a> Consumer<'a> {
                                 },
                                 Err(e) => {
                                     error!("Error when fetching notifier: {:?}", e);
-                                    result.ack();
-                                    continue;
                                 }
                             }
                         }
 
-                        self.notifiers.get(application_id).unwrap()
-                    };
+                        self.notifiers.get(application_id)
+                    } {
+                        let response = notifier.send(&event);
 
-                    match self.metrics.timers.response_time.time(|| notifier.send(&event)) {
-                        Ok(response) => {
-                            info!("Success: {:?}", response);
-                            self.metrics.counters.successful.increment(1);
-                        },
-                        Err(response) => {
-                            error!("Error: {:?}", response);
-                            self.metrics.counters.failure.increment(1);
-                        },
+                        self.metrics.gauges.in_flight.increment(1);
+                        self.tx_response.send((event, Some(response))).unwrap();
+                    } else {
+                        self.metrics.gauges.in_flight.increment(1);
+                        self.tx_response.send((event, None)).unwrap();
                     }
                 }
 
@@ -129,7 +128,7 @@ impl<'a> Consumer<'a> {
                 if !self.control.load(Ordering::Relaxed) { break; }
             }
 
-            thread::park_timeout(wait_duration);
+            thread::park_timeout(Duration::from_millis(100));
         }
 
         Ok(())

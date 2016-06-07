@@ -43,7 +43,7 @@ dependencies = [
 [[package]]
 name = "apns2"
 version = "0.0.1"
-source = "git+https://github.com/pimeys/apns2#90f37c6732111b0682988d21fc6082bc9496a392"
+source = "git+https://github.com/pimeys/apns2#32b2781e77a12f52ec31904403a0cbdb069abc94"
 dependencies = [
  "openssl 0.7.13 (registry+https://github.com/rust-lang/crates.io-index)",
  "rustc-serialize 0.3.19 (registry+https://github.com/rust-lang/crates.io-index)",

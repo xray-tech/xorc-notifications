@@ -1,0 +1,25 @@
+{
+  "id": "apns2",
+  "instances": 6,
+  "cpus": 0.1,
+  "mem": 20,
+  "labels": {
+    "collectd_app": "apns2",
+    "commit_id": "$commit"
+  },
+  "constraints": [
+    ["hostname", "GROUP_BY", "4"]
+  ],
+  "env": {
+    "RUST_LOG": "error",
+    "RUST_BACKTRACE": "1"
+  },
+  "cmd": "./apns2-$commit -n 10 -c /config/current/dmp/apns2/production.toml",
+  "fetch": [
+    {
+      "uri": "http://artifactory.service.consul:8081/artifactory/apns2/production/apns2-$commit",
+      "executable": true,
+      "extract": false
+    }
+  ]
+}

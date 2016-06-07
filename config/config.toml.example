@@ -1,10 +1,14 @@
+[artifactory]
+base_uri = "http://repo:katti@artifactory.service.consul:8081/artifactory"
+certificate_path = "apns_keys"
+
 [rabbitmq]
-queue = "http-requests.queue"
-exchange = "http-requests"
-exchange_type = "fanout"
-error_exchange = "http-responses"
-error_exchange_type = "fanout"
-routing_key = ""
+queue = "ha.apn.queue"
+exchange = "push-notifications"
+exchange_type = "topic"
+response_exchange = "push-notification-responses"
+response_exchange_type = "topic"
+routing_key = "apple"
 vhost = "/"
 host = "localhost"
 port = 5672
@@ -17,4 +21,4 @@ database = "test"
 tick_duration = 10
 login = ""
 password = ""
-application = "requester"
+application = "apn"

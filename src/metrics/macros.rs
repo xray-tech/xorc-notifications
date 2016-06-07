@@ -1,4 +1,25 @@
 #[macro_export]
+macro_rules! register_gauges {
+    ($($gauge:ident),+) => {
+        pub struct Gauges<'a> {
+            $( pub $gauge : Arc<Gauge<'a>> ),+
+        }
+
+        impl<'a> Gauges<'a> {
+            pub fn new() -> Gauges<'a> {
+                Gauges {
+                    $( $gauge : Arc::new(Gauge::new(stringify!($gauge))) ),+
+                }
+            }
+
+            pub fn as_vec(&self) -> Vec<Arc<Gauge<'a>>> {
+                vec![$( self.$gauge.clone() ),+]
+            }
+        }
+    }
+}
+
+#[macro_export]
 macro_rules! register_counters {
     ($($counter:ident),+) => {
         pub struct Counters<'a> {
