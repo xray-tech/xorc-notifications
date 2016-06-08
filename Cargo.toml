@@ -2,6 +2,7 @@
 name = "apns2"
 version = "0.1.0"
 authors = ["Julius de Bruijn <julius.debruijn@360dialog.com>"]
+build = "build.rs"
 
 [dependencies]
 apns2 = { git = "https://github.com/pimeys/apns2" }
