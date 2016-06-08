@@ -38,8 +38,6 @@ impl<'a> MetricsSender<'a> {
 
             let mut measurements: Vec<Measurement> = self.metrics.gauges.as_vec().iter().map(|gauge| {
                 (gauge.name, gauge.collect() as i64)
-            }).filter(|gauge| {
-                gauge.1 > 0
             }).map(|gauge| {
                 let mut measurement = Measurement::new(&gauge_name);
                 measurement.add_tag("metric", gauge.0);
