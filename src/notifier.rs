@@ -7,9 +7,9 @@ pub struct Apns2Notifier {
 }
 
 impl Apns2Notifier {
-    pub fn new<R: Read>(mut certificate: R, mut private_key: R) -> Apns2Notifier {
+    pub fn new<R: Read>(mut certificate: R, mut private_key: R, sandbox: &bool) -> Apns2Notifier {
         Apns2Notifier {
-            apns2_provider: Provider::from_reader(true, &mut certificate, &mut private_key),
+            apns2_provider: Provider::from_reader(*sandbox, &mut certificate, &mut private_key),
         }
     }
 

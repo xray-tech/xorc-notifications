@@ -35,7 +35,7 @@ use std::sync::mpsc::{Sender, Receiver};
 use std::thread;
 use std::thread::JoinHandle;
 use chan_signal::{Signal, notify};
-use argparse::{ArgumentParser, Store};
+use argparse::{ArgumentParser, Store, StoreTrue};
 use consumer::Consumer;
 use metrics::sender::MetricsSender;
 use metrics::Metrics;
@@ -65,8 +65,11 @@ fn main() {
     info!("Apple Push Notification System starting up!");
 
     let exit_signal = notify(&[Signal::INT, Signal::TERM]);
+
     let mut number_of_threads = 1;
     let mut config_file_location = String::from("./config/config.toml");
+    let mut sandbox = false;
+
     let control = Arc::new(AtomicBool::new(true));
     let metrics = Metrics::new();
 
@@ -79,6 +82,9 @@ fn main() {
         ap.refer(&mut config_file_location)
             .add_option(&["-c", "--config"], Store,
                         "Config file (default: config.toml)");
+        ap.refer(&mut sandbox)
+            .add_option(&["-s", "--sandbox"], StoreTrue,
+                        "Use the APNS sandbox environment");
         ap.parse_args_or_exit();
     }
 
@@ -93,7 +99,7 @@ fn main() {
         thread::spawn(move || {
             info!("Starting consumer #{}", i);
 
-            if let Err(error) = consumer.consume() {
+            if let Err(error) = consumer.consume(&sandbox) {
                 error!("Error in consumer: {:?}", error);
             }
 

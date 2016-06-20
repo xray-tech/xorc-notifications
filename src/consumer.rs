@@ -89,7 +89,7 @@ impl<'a> Consumer<'a> {
         }
     }
 
-    pub fn consume(&mut self) -> Result<(), Error> {
+    pub fn consume(&mut self, sandbox: &bool) -> Result<(), Error> {
         while self.control.load(Ordering::Relaxed) {
             for result in self.channel.basic_get(&self.config.rabbitmq.queue, false) {
                 if let Ok(event) = parse_from_bytes::<PushNotification>(&result.body) {
@@ -98,7 +98,7 @@ impl<'a> Consumer<'a> {
 
                         if !self.notifiers.contains_key(application_id) {
                             let create_notifier = move |cert: Cursor<&[u8]>, key: Cursor<&[u8]>| {
-                                Apns2Notifier::new(cert, key)
+                                Apns2Notifier::new(cert, key, sandbox)
                             };
 
                             match self.certificate_registry.with_certificate(application_id, create_notifier) {
