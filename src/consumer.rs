@@ -106,7 +106,7 @@ impl<'a> Consumer<'a> {
                                     self.notifiers.insert(application_id.to_string(), notifier);
                                 },
                                 Err(e) => {
-                                    error!("Error when fetching notifier: {:?}", e);
+                                    error!("Error when fetching certificate for {}: {:?}", application_id, e);
                                 }
                             }
                         }

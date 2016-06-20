@@ -85,15 +85,21 @@ impl<'a> ResponseProducer<'a> {
 
                     match response {
                         Ok(result) => {
-                            info!("OK: {:?} ({} ms)", result, response_time / 1000000);
+                            info!("Sent push notification for {}: {:?} ({} ms)",
+                                event.get_application_id(),
+                                result, response_time / 1000000);
+
                             apns_result.set_successful(true);
                             apns_result.set_status(Self::convert_status(result.status));
+
                             self.metrics.counters.successful.increment(1);
                         },
                         Err(result) => {
-                            info!("Error: {:?} ({} ms)", result, response_time / 1000000);
-                            apns_result.set_status(Self::convert_status(result.status));
+                            error!("Error in sending push notification for {}: {:?} ({} ms)",
+                                event.get_application_id(),
+                                result, response_time / 1000000);
 
+                            apns_result.set_status(Self::convert_status(result.status));
                             apns_result.set_successful(false);
 
                             if let Some(reason) = Self::convert_reason(result.reason) {
