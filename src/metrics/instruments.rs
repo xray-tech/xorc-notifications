@@ -47,7 +47,7 @@ impl<'a> Counter<'a> {
     }
 
     pub fn collect(&self) -> usize {
-        self.value.load(Ordering::Relaxed)
+        self.value.swap(0, Ordering::Relaxed)
     }
 }
 
