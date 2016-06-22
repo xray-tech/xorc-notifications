@@ -4,11 +4,11 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::Receiver;
 use std::thread;
 use events::push_notification::PushNotification;
-use events::apns_result::ApnsResult;
-use events::apns_result::ApnsResult_Status;
-use events::apns_result::ApnsResult_Status::*;
-use events::apns_result::ApnsResult_Reason;
-use events::apns_result::ApnsResult_Reason::*;
+use events::apple_notification::ApnsResult;
+use events::apple_notification::ApnsResult_Status;
+use events::apple_notification::ApnsResult_Status::*;
+use events::apple_notification::ApnsResult_Reason;
+use events::apple_notification::ApnsResult_Reason::*;
 use time::precise_time_ns;
 use config::Config;
 use amqp::{Session, Channel, Table, Basic, Options};
@@ -77,17 +77,16 @@ impl<'a> ResponseProducer<'a> {
         while self.is_running() {
             match self.rx.try_recv() {
                 Ok((mut event, Some(async_response))) => {
-                    let mut apns_result = ApnsResult::new();
-                    let response        = async_response.recv_timeout(response_timeout);
-                    let response_time   = precise_time_ns() - async_response.requested_at;
+                    let mut apns_result        = ApnsResult::new();
+                    let response               = async_response.recv_timeout(response_timeout);
+                    let response_time          = precise_time_ns() - async_response.requested_at;
 
                     self.metrics.timers.response_time.record(response_time);
 
                     match response {
                         Ok(result) => {
                             info!("Sent push notification for {}: {:?} ({} ms)",
-                                event.get_application_id(),
-                                result, response_time / 1000000);
+                                event.get_application_id(), result, response_time / 1000000);
 
                             apns_result.set_successful(true);
                             apns_result.set_status(Self::convert_status(result.status));
@@ -114,7 +113,7 @@ impl<'a> ResponseProducer<'a> {
                         }
                     }
 
-                    event.set_apns_result(apns_result);
+                    event.mut_apple().set_result(apns_result);
 
                     self.channel.basic_publish(
                         &*self.config.rabbitmq.response_exchange,
@@ -127,12 +126,13 @@ impl<'a> ResponseProducer<'a> {
                     self.metrics.gauges.in_flight.decrement(1);
                 },
                 Ok((mut event, None)) => {
-                    let mut apns_result = ApnsResult::new();
+                    let mut apns_result        = ApnsResult::new();
+
                     apns_result.set_successful(false);
                     apns_result.set_status(Error);
                     apns_result.set_reason(MissingCertificate);
 
-                    event.set_apns_result(apns_result);
+                    event.mut_apple().set_result(apns_result);
 
                     self.channel.basic_publish(
                         &*self.config.rabbitmq.response_exchange,

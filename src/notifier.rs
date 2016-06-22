@@ -15,8 +15,8 @@ impl Apns2Notifier {
 
     pub fn send(&self, event: &PushNotification) -> AsyncResponse {
         let token             = DeviceToken::new(event.get_device_token());
-        let notification_data = event.get_notification();
-        let headers           = notification_data.get_apns_headers();
+        let notification_data = event.get_apple();
+        let headers           = notification_data.get_headers();
 
         let options = NotificationOptions {
             apns_priority:   if headers.has_apns_priority()   { Some(headers.get_apns_priority())   } else { None },
