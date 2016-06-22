@@ -1,0 +1,21 @@
+[package]
+name = "fcm"
+version = "0.1.0"
+authors = ["Julius de Bruijn <julius.debruijn@360dialog.com>"]
+build = "build.rs"
+
+[dependencies]
+fcm = { git = "https://github.com/pimeys/fcm-rust" }
+amqp = "*"
+protobuf = "*"
+chan-signal = "*"
+argparse = "*"
+env_logger = "*"
+syslog = "*"
+log = "*"
+toml = "*"
+influent = "*"
+histogram = "*"
+rustc-serialize = "*"
+time = "*"
+hyper = "*"

@@ -1,0 +1,24 @@
+[artifactory]
+base_uri = "http://repo:katti@artifactory.service.consul:8081/artifactory"
+certificate_path = "fcm_keys"
+
+[rabbitmq]
+queue = "ha.apn.queue"
+exchange = "push-notifications"
+exchange_type = "topic"
+response_exchange = "push-notification-responses"
+response_exchange_type = "topic"
+routing_key = "google"
+vhost = "/"
+host = "localhost"
+port = 5672
+login = "guest"
+password = "guest"
+
+[metrics]
+uri = "http://localhost:8086"
+database = "test"
+tick_duration = 10
+login = ""
+password = ""
+application = "fcm"
