@@ -13,7 +13,7 @@ use std::sync::mpsc::{channel, Receiver};
 use protobuf::core::Message;
 use metrics::Metrics;
 
-pub type FcmData = (PushNotification, Result<FcmResponse, FcmError>);
+pub type FcmData = (PushNotification, Option<Result<FcmResponse, FcmError>>);
 
 pub struct ResponseProducer<'a> {
     channel: Channel,
@@ -70,7 +70,7 @@ impl<'a> ResponseProducer<'a> {
 
         while self.control.load(Ordering::Relaxed) {
             match self.rx.try_recv() {
-                Ok((mut event, Ok(response))) => {
+                Ok((mut event, Some(Ok(response)))) => {
                     let mut fcm_result = FcmResult::new();
                     let ref results = response.results.unwrap();
                     let ref result = results.first().unwrap();
@@ -131,7 +131,7 @@ impl<'a> ResponseProducer<'a> {
                         BasicProperties { ..Default::default() },
                         event.write_to_bytes().unwrap()).unwrap();
                 },
-                Ok((mut event, Err(error))) => {
+                Ok((mut event, Some(Err(error)))) => {
                     error!("{:?}", &error);
 
                     self.metrics.counters.failure.increment(1);
@@ -146,6 +146,24 @@ impl<'a> ResponseProducer<'a> {
                             fcm_result.set_error(error);
                         },
                     }
+
+                    event.mut_google().set_response(fcm_result);
+
+                    self.channel.basic_publish(
+                        &*self.config.rabbitmq.response_exchange,
+                        "google", // routing key
+                        false,   // mandatory
+                        false,   // immediate
+                        BasicProperties { ..Default::default() },
+                        event.write_to_bytes().unwrap()).unwrap();
+                },
+                Ok((mut event, None)) => {
+                    self.metrics.counters.certificate_missing.increment(1);
+
+                    let mut fcm_result = FcmResult::new();
+
+                    fcm_result.set_successful(false);
+                    fcm_result.set_status(MissingCertificate);
 
                     event.mut_google().set_response(fcm_result);
 

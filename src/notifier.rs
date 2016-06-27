@@ -18,7 +18,7 @@ impl<'a> Notifier<'a> {
         }
     }
 
-    pub fn send(&self, pn: &PushNotification) -> Result<FcmResponse, FcmError> {
+    pub fn send(&self, pn: &PushNotification, api_key: &str) -> Result<FcmResponse, FcmError> {
         let notification = pn.get_google();
         let mut message  = MessageBuilder::new(pn.get_device_token());
 
@@ -94,7 +94,7 @@ impl<'a> Notifier<'a> {
         }
 
         self.metrics.timers.response_time.time(|| {
-            self.fcm_client.send(message.finalize(), "AIzaSyDEXS1bYcNN9a2C-PeamjlmRmZ89CTYUW4")
+            self.fcm_client.send(message.finalize(), api_key)
         })
     }
 }

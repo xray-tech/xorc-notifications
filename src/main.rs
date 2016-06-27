@@ -22,6 +22,8 @@ mod notifier;
 mod events;
 mod producer;
 mod metrics;
+mod artifactory;
+mod certificate_registry;
 
 use log::*;
 use config::Config;
@@ -39,6 +41,7 @@ use std::sync::mpsc;
 use std::sync::mpsc::{Sender, Receiver};
 use metrics::sender::MetricsSender;
 use metrics::Metrics;
+use certificate_registry::CertificateRegistry;
 
 fn setup_logger() {
     match syslog::unix(Facility::LOG_USER) {
@@ -77,14 +80,17 @@ fn main() {
         ap.parse_args_or_exit();
     }
 
-    let metrics = Metrics::new();
-    let config  = Arc::new(Config::parse(config_file_location));
-    let control = Arc::new(AtomicBool::new(true));
+    let metrics              = Metrics::new();
+    let config               = Arc::new(Config::parse(config_file_location));
+    let certificate_registry = Arc::new(CertificateRegistry::new(config.clone()));
+    let control              = Arc::new(AtomicBool::new(true));
+
     let (tx, rx): (Sender<FcmData>, Receiver<FcmData>) = mpsc::channel();
 
     let mut threads : Vec<JoinHandle<_>> = (0..number_of_threads).map(|i| {
-        let mut consumer = Consumer::new(control.clone(), config.clone(),
-        Notifier::new(metrics.clone()), tx.clone());
+        let notifier     = Notifier::new(metrics.clone());
+        let mut consumer = Consumer::new(control.clone(), config.clone(), notifier,
+            tx.clone(), certificate_registry.clone());
 
         thread::spawn(move || {
             info!("Starting consumer #{}", i);
