@@ -72,8 +72,8 @@ impl<'a> ResponseProducer<'a> {
             match self.rx.try_recv() {
                 Ok((mut event, Ok(response))) => {
                     let mut fcm_result = FcmResult::new();
-                    let results = response.results.unwrap();
-                    let result = results.first().unwrap();
+                    let ref results = response.results.unwrap();
+                    let ref result = results.first().unwrap();
 
                     if let Some(multicast_id) = response.multicast_id {
                         fcm_result.set_multicast_id(multicast_id);
@@ -92,10 +92,14 @@ impl<'a> ResponseProducer<'a> {
                     }
 
                     if result.error.is_none() {
+                        info!("{:?}", result);
+
                         self.metrics.counters.successful.increment(1);
                         fcm_result.set_successful(true);
                         fcm_result.set_status(Success);
                     } else {
+                        error!("{:?}", result);
+
                         self.metrics.counters.failure.increment(1);
                         fcm_result.set_successful(false);
 
@@ -115,19 +119,21 @@ impl<'a> ResponseProducer<'a> {
                         };
 
                         fcm_result.set_status(*status);
-
-                        event.mut_google().set_response(fcm_result);
-
-                        self.channel.basic_publish(
-                            &*self.config.rabbitmq.response_exchange,
-                            "google", // routing key
-                            false,   // mandatory
-                            false,   // immediate
-                            BasicProperties { ..Default::default() },
-                            event.write_to_bytes().unwrap()).unwrap();
                     }
+
+                    event.mut_google().set_response(fcm_result);
+
+                    self.channel.basic_publish(
+                        &*self.config.rabbitmq.response_exchange,
+                        "google", // routing key
+                        false,   // mandatory
+                        false,   // immediate
+                        BasicProperties { ..Default::default() },
+                        event.write_to_bytes().unwrap()).unwrap();
                 },
                 Ok((mut event, Err(error))) => {
+                    error!("{:?}", &error);
+
                     self.metrics.counters.failure.increment(1);
                     let mut fcm_result = FcmResult::new();
                     fcm_result.set_successful(false);
