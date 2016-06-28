@@ -1,5 +1,5 @@
 {
-  "id": "/push-notifications/apns2",
+  "id": "push-notifications/apns2",
   "instances": 6,
   "cpus": 0.1,
   "mem": 20,
