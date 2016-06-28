@@ -1,5 +1,5 @@
 {
-  "id": "fcm",
+  "id": "/push-notifications/fcm",
   "instances": 6,
   "cpus": 0.1,
   "mem": 20,
