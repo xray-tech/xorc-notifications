@@ -56,6 +56,14 @@ impl Apns2Notifier {
                 Some(alert_data.get_launch_image().to_string())
             } else { None };
 
+            let loc_key = if alert_data.has_loc_key() {
+                Some(alert_data.get_loc_key().to_string())
+            } else { None };
+
+            let loc_args = if alert_data.get_loc_args().len() > 0 {
+                Some(alert_data.get_loc_args().iter().map(|a| a.to_string()).collect())
+            } else { None };
+
             let alert = APSAlert::Localized(
                 APSLocalizedAlert {
                     title: alert_data.get_title().to_string(),
@@ -63,8 +71,8 @@ impl Apns2Notifier {
                     title_loc_key: title_loc_key,
                     title_loc_args: title_loc_args,
                     action_loc_key: action_loc_key,
-                    loc_key: alert_data.get_loc_key().to_string(),
-                    loc_args: alert_data.get_loc_args().iter().map(|a| a.to_string()).collect(),
+                    loc_key: loc_key,
+                    loc_args: loc_args,
                     launch_image: launch_image,
                 });
 
