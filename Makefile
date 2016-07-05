@@ -19,6 +19,6 @@ update: ## Update the running Mesos configuration
 auto_update: ## Update the running Mesos configuration, don't ask questions
 	$(deplicity) -f -i $(influx) -m $(marathon) -j $(config) -v $(commit_id) simple
 
-upload: ## Upload the assembly jar to the repository
+upload: ## Upload the binary to the repository
 	$(curl) -T $(executable) $(artifactory)/production/fcm-$(commit_id)
 
