@@ -29,3 +29,17 @@ auto_update                    Update the running Mesos configuration, don't ask
 update                         Update the running Mesos configuration
 upload                         Upload the binary to the repository
 ```
+
+APNS P12 conversion
+-------------------
+
+To be able to send notifications to a specific application, we need to store
+its private key and certificate to the artifactory service. The keys are stored
+in `http://artifactory.service.consul:8081/artifactory/apns_keys/<STORE
+ID>/push_cert.[pem|key]`. To convert a P12 packaged Apple key to a separate key
+and certificate, install openssl to get the required files:
+
+```
+openssl pkcs12 -in package.p12 -nodes -out push_cert.key -nocerts
+openssl pkcs12 -in package.p12 -out push_cert.pem
+```
