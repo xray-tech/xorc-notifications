@@ -27,3 +27,11 @@ auto_update                    Update the running Mesos configuration, don't ask
 update                         Update the running Mesos configuration
 upload                         Upload the binary to the repository
 ```
+
+Customer API keys
+-----------------
+
+To be able to send notifications to a specific application, we need to store
+its api key to the artifactory. The key is stored
+in `http://artifactory.service.consul:8081/artifactory/fcm_keys/<STORE
+ID>/api_key`.
