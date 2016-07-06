@@ -1,4 +1,5 @@
 use hyper::client::{Client, Response};
+use hyper::header::Connection;
 use hyper::error::{Error as HttpError};
 use hyper::status::StatusCode;
 
@@ -36,7 +37,7 @@ impl ArtifactoryClient {
     }
 
     fn fetch(&self, uri: String) -> Result<Response, ArtifactoryError> {
-        match self.client.get(&uri).send() {
+        match self.client.get(&uri).header(Connection::close()).send() {
             Ok(response) =>
                 if response.status == StatusCode::Ok {
                     Ok(response)
