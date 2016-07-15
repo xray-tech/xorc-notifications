@@ -123,7 +123,7 @@ dependencies = [
 [[package]]
 name = "fcm"
 version = "0.1.1"
-source = "git+https://github.com/pimeys/fcm-rust#c52ac56be331a4633bdde3e5a22edb2efc2774fe"
+source = "git+https://github.com/pimeys/fcm-rust#bbaa5e4476e79084ab8d0e82c50412318391874f"
 dependencies = [
  "hyper 0.9.10 (registry+https://github.com/rust-lang/crates.io-index)",
  "rustc-serialize 0.3.19 (registry+https://github.com/rust-lang/crates.io-index)",
