@@ -11,7 +11,7 @@
     ["hostname", "GROUP_BY", "4"]
   ],
   "env": {
-    "RUST_LOG": "error",
+    "RUST_LOG": "info",
     "RUST_BACKTRACE": "1"
   },
   "cmd": "./fcm-$commit -n 10 -c /config/current/dmp/fcm/production.toml",
