@@ -1,6 +1,7 @@
 use apns2::*;
 use events::push_notification::PushNotification;
 use std::io::Read;
+use rustc_serialize::json::{Json};
 
 pub struct Apns2Notifier {
     apns2_provider: Provider,
@@ -35,6 +36,21 @@ impl Apns2Notifier {
 
         let category = if notification_data.has_category() {
             Some(notification_data.get_category().to_string())
+        } else { None };
+
+        let custom_data = if notification_data.has_custom_data() {
+            let custom_data = notification_data.get_custom_data();
+
+            match Json::from_str(custom_data.get_body()) {
+                Ok(json) => Some(CustomData {
+                    key: custom_data.get_key().to_string(),
+                    body: json,
+                }),
+                Err(e) => {
+                    error!("Non-json custom data: {:?}", e);
+                    None
+                },
+            }
         } else { None };
 
         let payload: Payload = if notification_data.has_localized() {
@@ -76,13 +92,13 @@ impl Apns2Notifier {
                     launch_image: launch_image,
                 });
 
-            Payload::new(alert, badge, sound, category)
+            Payload::new(alert, badge, sound, category, custom_data)
         } else if notification_data.has_silent() {
-            Payload::new_silent_notification()
+            Payload::new_silent_notification(custom_data)
         } else {
             let alert = APSAlert::Plain(notification_data.get_plain().to_string());
 
-            Payload::new(alert, badge, sound, category)
+            Payload::new(alert, badge, sound, category, custom_data)
         };
 
         self.apns2_provider.push(Notification::new(payload, token, options))
