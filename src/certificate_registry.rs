@@ -1,35 +1,46 @@
-use std::collections::HashMap;
-use std::sync::{Mutex, Arc};
+use std::sync::Arc;
 use config::Config;
-use artifactory::{ArtifactoryClient, ArtifactoryError};
+use mysql::{Pool, Opts, Error as MysqlError};
 
 pub struct CertificateRegistry {
-    certificates: Mutex<HashMap<String, String>>,
-    artifactory: ArtifactoryClient,
+    mysql: Pool,
+}
+
+#[derive(Debug)]
+pub enum CertificateError {
+    Mysql(MysqlError),
+    NotFoundError(String),
 }
 
 impl CertificateRegistry {
     pub fn new(config: Arc<Config>) -> CertificateRegistry {
-        let base_uri = config.artifactory.base_uri.clone();
-        let path     = config.artifactory.certificate_path.clone();
+        let opts = Opts::from_url(&config.mysql.uri).unwrap();
 
         CertificateRegistry {
-            certificates: Mutex::new(HashMap::new()),
-            artifactory: ArtifactoryClient::new(base_uri, path),
+            mysql: Pool::new(opts).unwrap(),
         }
     }
 
-    pub fn fetch<F, T>(&self, application: &str, f: F) -> Result<T, ArtifactoryError>
+    pub fn fetch<F, T>(&self, application: &str, f: F) -> Result<T, CertificateError>
         where F: FnOnce(&str) -> T {
-            let mut certificates = self.certificates.lock().unwrap();
 
-            if let Some(api_key) = certificates.get(application) {
-                return Ok(f(api_key))
-            }
+        let query = "SELECT api_key \
+                     FROM android_applications droid \
+                     INNER JOIN applications app on app.id = droid.application_id \
+                     WHERE droid.app_store_id = :app_store_id \
+                     AND droid.enabled IS TRUE AND app.deleted_at IS NULL \
+                     AND droid.api_key IS NOT NULL";
 
-            let api_key = try!(self.artifactory.fetch_api_key(application));
-            certificates.insert(String::from(application), api_key);
+        info!("Loading api_key from mysql to {}", application);
 
-            Ok(f(certificates.get(application).unwrap()))
+        match self.mysql.first_exec(query, params!{"app_store_id" => application}) {
+            Ok(Some(mut row)) => {
+                let api_key: String = row.take("api_key").unwrap();
+
+                Ok(f(&api_key))
+            },
+            Ok(None) => Err(CertificateError::NotFoundError(format!("Couldn't find a certificate for {}", application))),
+            Err(e) => Err(CertificateError::Mysql(e)),
+        }
     }
 }

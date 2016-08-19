@@ -15,6 +15,9 @@ extern crate histogram;
 extern crate rustc_serialize;
 extern crate time;
 
+#[macro_use]
+extern crate mysql;
+
 mod logger;
 mod config;
 mod consumer;
@@ -22,7 +25,6 @@ mod notifier;
 mod events;
 mod producer;
 mod metrics;
-mod artifactory;
 mod certificate_registry;
 
 use log::*;

@@ -12,6 +12,7 @@ use hyper::error::Error;
 use notifier::Notifier;
 use producer::FcmData;
 use certificate_registry::CertificateRegistry;
+use time::precise_time_s;
 
 pub struct Consumer<'a> {
     channel: Channel,
@@ -21,7 +22,11 @@ pub struct Consumer<'a> {
     config: Arc<Config>,
     tx: Sender<FcmData>,
     registry: Arc<CertificateRegistry>,
-    certificates: HashMap<String, String>,
+}
+
+struct ApiKey {
+    pub key: String,
+    pub timestamp: f64,
 }
 
 impl<'a> Drop for Consumer<'a> {
@@ -78,23 +83,38 @@ impl<'a> Consumer<'a> {
             config: config,
             tx: tx,
             registry: registry,
-            certificates: HashMap::new(),
         }
     }
 
     pub fn consume(&mut self) -> Result<(), Error> {
+        let mut certificates: HashMap<String, ApiKey> = HashMap::new();
+        let cache_ttl = 10.0;
+
         while self.control.load(Ordering::Relaxed) {
             for result in self.channel.basic_get(&self.config.rabbitmq.queue, false) {
                 if let Ok(event) = parse_from_bytes::<PushNotification>(&result.body) {
                     if let Some(api_key) = {
                         let application_id = event.get_application_id();
 
-                        if !self.certificates.contains_key(application_id) {
-                            let add_key = |api_key: &str| { String::from(api_key) };
+                        let expired_keys: Vec<_> = certificates
+                            .iter()
+                            .filter(|&(_, ref v)| precise_time_s() - v.timestamp >= cache_ttl)
+                            .map(|(k, _)| k.clone())
+                            .collect();
+
+                        for key in expired_keys { certificates.remove(&key); }
+
+                        if !certificates.contains_key(application_id) {
+                            let add_key = |api_key: &str| {
+                                ApiKey {
+                                    key: String::from(api_key),
+                                    timestamp: precise_time_s(),
+                                }
+                            };
 
                             match self.registry.fetch(application_id, add_key) {
                                 Ok(api_key) => {
-                                    self.certificates.insert(String::from(application_id), api_key);
+                                    certificates.insert(String::from(application_id), api_key);
                                 },
                                 Err(err) => {
                                     error!("Error when fetching certificate for {}: {:?}", event.get_application_id(), err);
@@ -102,9 +122,9 @@ impl<'a> Consumer<'a> {
                             }
                         }
 
-                        self.certificates.get(application_id)
+                        certificates.get(application_id)
                     } {
-                        let response = self.notifier.send(&event, api_key);
+                        let response = self.notifier.send(&event, &api_key.key);
 
                         self.tx.send((event, Some(response))).unwrap();
                     } else {
