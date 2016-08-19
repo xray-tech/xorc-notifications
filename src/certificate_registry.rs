@@ -1,45 +1,52 @@
-use std::collections::HashMap;
-use std::sync::{Mutex, Arc};
+use std::sync::Arc;
 use config::Config;
-use artifactory::{ArtifactoryClient, ArtifactoryError};
-use std::io::{Read, Cursor};
+use mysql::{Pool, Opts, Error as MysqlError};
+use std::io::Cursor;
+use time::Timespec;
+
+#[derive(Debug)]
+pub enum CertificateError {
+    Mysql(MysqlError),
+    NotFoundError(String),
+    NotChanged(String),
+}
 
 pub struct CertificateRegistry {
-    certificates: Mutex<HashMap<String, (Vec<u8>, Vec<u8>)>>,
-    artifactory: ArtifactoryClient,
+    mysql: Pool
 }
 
 impl CertificateRegistry {
     pub fn new(config: Arc<Config>) -> CertificateRegistry {
+        let opts = Opts::from_url(&config.mysql.uri).unwrap();
+
         CertificateRegistry {
-            certificates: Mutex::new(HashMap::new()),
-            artifactory: ArtifactoryClient::new(config.artifactory.base_uri.clone()),
+            mysql: Pool::new(opts).unwrap(),
         }
     }
 
-    pub fn with_certificate<T, F>(&self, application: &str, f: F) -> Result<T, ArtifactoryError>
-        where F: FnOnce(Cursor<&[u8]>, Cursor<&[u8]>) -> T {
-            let mut certificates = self.certificates.lock().unwrap();
+    pub fn with_certificate<T, F>(&self, application: &str, f: F) -> Result<T, CertificateError>
+        where F: FnOnce(Cursor<&[u8]>, Cursor<&[u8]>, Option<Timespec>) -> Result<T, CertificateError> {
+        info!("Loading certificates from mysql for {}", application);
 
-            if let Some(cert_pair) = certificates.get_mut(application) {
-                return Ok(f(Cursor::new(cert_pair.0.as_slice()), Cursor::new(cert_pair.1.as_slice())))
-            }
+        let query = "SELECT certificate, private_key, ios.updated_at \
+                     FROM ios_applications ios \
+                     INNER JOIN applications app ON app.id = ios.application_id \
+                     WHERE ios.app_store_id = :app_store_id \
+                     AND ios.enabled IS TRUE AND app.deleted_at IS NULL \
+                     AND ios.certificate IS NOT NULL AND ios.private_key IS NOT NULL";
 
-            let mut cert_data: Vec<u8> = Vec::new();
-            let mut key_data: Vec<u8> = Vec::new();
+        match self.mysql.first_exec(query, params!{"app_store_id" => application}) {
+            Ok(Some(mut row)) => {
+                let certificate: String = row.take("certificate").unwrap();
+                let private_key: String = row.take("private_key").unwrap();
+                let updated_at: Option<Timespec> = row.take("updated_at");
 
-            let mut cert = try!(self.artifactory.fetch_certificate(application));
-            cert.read_to_end(&mut cert_data).unwrap();
-            cert_data.shrink_to_fit();
-
-            let mut key = try!(self.artifactory.fetch_private_key(application));
-            key.read_to_end(&mut key_data).unwrap();
-            key_data.shrink_to_fit();
-
-            certificates.insert(String::from(application), (cert_data, key_data));
-
-            let cert_pair = certificates.get_mut(application).unwrap();
-
-            Ok(f(Cursor::new(cert_pair.0.as_slice()), Cursor::new(cert_pair.1.as_slice())))
+                f(Cursor::new(certificate.into_bytes().as_slice()),
+                  Cursor::new(private_key.into_bytes().as_slice()),
+                  updated_at)
+            },
+            Ok(None) => Err(CertificateError::NotFoundError(format!("Couldn't find a certificate for {}", application))),
+            Err(e) => Err(CertificateError::Mysql(e)),
         }
+    }
 }

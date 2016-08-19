@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 use std::io::Cursor;
@@ -12,24 +12,31 @@ use protobuf::parse_from_bytes;
 use config::Config;
 use metrics::Metrics;
 use hyper::error::Error;
-use certificate_registry::CertificateRegistry;
+use certificate_registry::{CertificateRegistry, CertificateError};
 use std::sync::mpsc::Sender;
 use producer::ApnsResponse;
+use time::{precise_time_s, Timespec};
+
+struct Notifier {
+    apns: Apns2Notifier,
+    updated_at: Option<Timespec>,
+    timestamp: f64,
+}
 
 pub struct Consumer<'a> {
-    channel: Channel,
+    channel: Mutex<Channel>,
     session: Session,
-    notifiers: HashMap<String, Apns2Notifier>,
     control: Arc<AtomicBool>,
     metrics: Arc<Metrics<'a>>,
     config: Arc<Config>,
     certificate_registry: Arc<CertificateRegistry>,
     tx_response: Sender<ApnsResponse>,
+    cache_ttl: f64,
 }
 
 impl<'a> Drop for Consumer<'a> {
     fn drop(&mut self) {
-        let _ = self.channel.close(200, "Bye!");
+        let _ = self.channel.lock().unwrap().close(200, "Bye!");
         let _ = self.session.close(200, "Good bye!");
     }
 }
@@ -78,42 +85,36 @@ impl<'a> Consumer<'a> {
             Table::new()).unwrap();
 
         Consumer {
-            channel: channel,
+            channel: Mutex::new(channel),
             session: session,
-            notifiers: HashMap::new(),
             control: control,
             metrics: metrics,
             config: config,
             certificate_registry: certificate_registry,
             tx_response: tx_response,
+            cache_ttl: 10.0,
         }
     }
 
-    pub fn consume(&mut self, sandbox: &bool) -> Result<(), Error> {
+    pub fn consume(&self, sandbox: &bool) -> Result<(), Error> {
+        let mut notifiers: HashMap<String, Notifier> = HashMap::new();
+        let mut channel = self.channel.lock().unwrap();
+
         while self.control.load(Ordering::Relaxed) {
-            for result in self.channel.basic_get(&self.config.rabbitmq.queue, false) {
+            for result in channel.basic_get(&self.config.rabbitmq.queue, false) {
                 if let Ok(event) = parse_from_bytes::<PushNotification>(&result.body) {
                     if let Some(notifier) = {
                         let application_id = event.get_application_id();
 
-                        if !self.notifiers.contains_key(application_id) {
-                            let create_notifier = move |cert: Cursor<&[u8]>, key: Cursor<&[u8]>| {
-                                Apns2Notifier::new(cert, key, sandbox)
-                            };
+                        self.update_notifiers(&mut notifiers, sandbox);
 
-                            match self.certificate_registry.with_certificate(application_id, create_notifier) {
-                                Ok(notifier) => {
-                                    self.notifiers.insert(application_id.to_string(), notifier);
-                                },
-                                Err(e) => {
-                                    error!("Error when fetching certificate for {}: {:?}", application_id, e);
-                                }
-                            }
+                        if !notifiers.contains_key(application_id) {
+                            self.add_new_notifier(&mut notifiers, &application_id, sandbox);
                         }
 
-                        self.notifiers.get(application_id)
+                        notifiers.get(application_id)
                     } {
-                        let response = notifier.send(&event);
+                        let response = notifier.apns.send(&event);
 
                         self.metrics.gauges.in_flight.increment(1);
                         self.tx_response.send((event, Some(response))).unwrap();
@@ -132,5 +133,66 @@ impl<'a> Consumer<'a> {
         }
 
         Ok(())
+    }
+
+    fn add_new_notifier(&self, notifiers: &mut HashMap<String, Notifier>, application_id: &str, sandbox: &bool) {
+        let create_notifier = move |cert: Cursor<&[u8]>, key: Cursor<&[u8]>, updated_at: Option<Timespec>| {
+            Ok(Notifier {
+                apns: Apns2Notifier::new(cert, key, sandbox),
+                updated_at: updated_at,
+                timestamp: precise_time_s(),
+            })
+        };
+
+        match self.certificate_registry.with_certificate(application_id, create_notifier) {
+            Ok(notifier) => {
+                notifiers.insert(application_id.to_string(), notifier);
+            },
+            Err(e) => {
+                error!("Error when fetching certificate for {}: {:?}", application_id, e);
+            }
+        }
+    }
+
+    fn update_notifiers(&self, notifiers: &mut HashMap<String, Notifier>, sandbox: &bool) {
+        let expired_keys: Vec<_> = notifiers
+            .iter()
+            .filter(|&(_, ref v)| precise_time_s() - v.timestamp >= self.cache_ttl)
+            .map(|(k, _)| k.clone())
+            .collect();
+
+        for key in expired_keys {
+            let last_update = notifiers.get(&key).unwrap().updated_at.clone();
+
+            let create_notifier = move |cert: Cursor<&[u8]>, key: Cursor<&[u8]>, updated_at: Option<Timespec>| {
+                if updated_at != last_update {
+                    Ok(Notifier {
+                        apns: Apns2Notifier::new(cert, key, sandbox),
+                        updated_at: updated_at,
+                        timestamp: precise_time_s(),
+                    })
+                } else {
+                    Err(CertificateError::NotChanged(format!("No changes to the certificate")))
+                }
+            };
+
+            match self.certificate_registry.with_certificate(&key, create_notifier) {
+                Ok(notifier) => {
+                    notifiers.remove(&key);
+                    notifiers.insert(key.to_string(), notifier);
+                    info!("New certificate for application {}", key);
+                },
+                Err(CertificateError::NotChanged(s)) => {
+                    let mut notifier = notifiers.get_mut(&key).unwrap();
+                    notifier.timestamp = precise_time_s();
+
+                    info!("Alles gut for application {}: {:?}", key, s);
+                },
+                Err(e) => {
+                    error!("Error when fetching certificate for {}, removing: {:?}", key, e);
+                    notifiers.remove(&key);
+                }
+            }
+        }
     }
 }

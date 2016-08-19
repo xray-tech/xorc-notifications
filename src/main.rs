@@ -4,6 +4,8 @@ extern crate env_logger;
 extern crate syslog;
 extern crate hyper;
 
+#[macro_use]
+extern crate mysql;
 extern crate apns2;
 extern crate amqp;
 extern crate chan_signal;
@@ -21,7 +23,6 @@ mod consumer;
 mod logger;
 mod metrics;
 mod config;
-mod artifactory;
 mod certificate_registry;
 mod producer;
 
@@ -93,7 +94,7 @@ fn main() {
     let (tx_response, rx_response): (Sender<ApnsResponse>, Receiver<ApnsResponse>) = mpsc::channel();
 
     let mut threads : Vec<JoinHandle<_>> = (0..number_of_threads).map(|i| {
-        let mut consumer = Consumer::new(control.clone(), metrics.clone(),
+        let consumer = Consumer::new(control.clone(), metrics.clone(),
             config.clone(), certificate_registry.clone(), tx_response.clone());
 
         thread::spawn(move || {

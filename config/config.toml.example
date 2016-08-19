@@ -1,6 +1,5 @@
-[artifactory]
-base_uri = "http://repo:katti@artifactory.service.consul:8081/artifactory"
-certificate_path = "apns_keys"
+[mysql]
+uri = "mysql://root:kulli@localhost:3306/crm"
 
 [rabbitmq]
 queue = "ha.apn.queue"
