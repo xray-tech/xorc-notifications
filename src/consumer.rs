@@ -18,7 +18,7 @@ use producer::ApnsResponse;
 use time::{precise_time_s, Timespec};
 
 struct Notifier {
-    apns: Apns2Notifier,
+    apns: Option<Apns2Notifier>,
     updated_at: Option<Timespec>,
     timestamp: f64,
 }
@@ -106,18 +106,23 @@ impl<'a> Consumer<'a> {
                     if let Some(notifier) = {
                         let application_id = event.get_application_id();
 
-                        self.update_notifiers(&mut notifiers, sandbox);
-
-                        if !notifiers.contains_key(application_id) {
-                            self.add_new_notifier(&mut notifiers, &application_id, sandbox);
-                        }
+                        self.update_notifiers(&mut notifiers, application_id, sandbox);
 
                         notifiers.get(application_id)
                     } {
-                        let response = notifier.apns.send(&event);
+                        match notifier.apns {
+                            Some(ref apns) => {
+                                let response = apns.send(&event);
+                                self.metrics.gauges.in_flight.increment(1);
+                                self.tx_response.send((event, Some(response))).unwrap();
+                            },
+                            None => {
+                                error!("No notifier for {}. Certificate not loaded.", event.get_application_id());
 
-                        self.metrics.gauges.in_flight.increment(1);
-                        self.tx_response.send((event, Some(response))).unwrap();
+                                self.metrics.gauges.in_flight.increment(1);
+                                self.tx_response.send((event, None)).unwrap();
+                            }
+                        }
                     } else {
                         self.metrics.gauges.in_flight.increment(1);
                         self.tx_response.send((event, None)).unwrap();
@@ -135,62 +140,66 @@ impl<'a> Consumer<'a> {
         Ok(())
     }
 
-    fn add_new_notifier(&self, notifiers: &mut HashMap<String, Notifier>, application_id: &str, sandbox: &bool) {
-        let create_notifier = move |cert: Cursor<&[u8]>, key: Cursor<&[u8]>, updated_at: Option<Timespec>| {
-            Ok(Notifier {
-                apns: Apns2Notifier::new(cert, key, sandbox),
-                updated_at: updated_at,
-                timestamp: precise_time_s(),
-            })
-        };
+    fn update_notifiers(&self, notifiers: &mut HashMap<String, Notifier>, application_id: &str, sandbox: &bool) {
+        if notifiers.get(application_id).is_some() {
+            if precise_time_s() - notifiers.get(application_id).unwrap().timestamp >= self.cache_ttl {
+                let last_update = notifiers.get(application_id).unwrap().updated_at.clone();
 
-        match self.certificate_registry.with_certificate(application_id, create_notifier) {
-            Ok(notifier) => {
-                notifiers.insert(application_id.to_string(), notifier);
-            },
-            Err(e) => {
-                error!("Error when fetching certificate for {}: {:?}", application_id, e);
-            }
-        }
-    }
+                let create_notifier = move |cert: Cursor<&[u8]>, key: Cursor<&[u8]>, updated_at: Option<Timespec>| {
+                    if updated_at != last_update {
+                        Ok(Notifier {
+                            apns: Some(Apns2Notifier::new(cert, key, sandbox)),
+                            updated_at: updated_at,
+                            timestamp: precise_time_s(),
+                        })
+                    } else {
+                        Err(CertificateError::NotChanged(format!("No changes to the certificate")))
+                    }
+                };
 
-    fn update_notifiers(&self, notifiers: &mut HashMap<String, Notifier>, sandbox: &bool) {
-        let expired_keys: Vec<_> = notifiers
-            .iter()
-            .filter(|&(_, ref v)| precise_time_s() - v.timestamp >= self.cache_ttl)
-            .map(|(k, _)| k.clone())
-            .collect();
+                match self.certificate_registry.with_certificate(&application_id, create_notifier) {
+                    Ok(notifier) => {
+                        notifiers.remove(application_id);
+                        notifiers.insert(application_id.to_string(), notifier);
+                        info!("New certificate for application {}", application_id);
+                    },
+                    Err(CertificateError::NotChanged(s)) => {
+                        let mut notifier = notifiers.get_mut(application_id).unwrap();
+                        notifier.timestamp = precise_time_s();
 
-        for key in expired_keys {
-            let last_update = notifiers.get(&key).unwrap().updated_at.clone();
+                        info!("Alles gut for application {}: {:?}", application_id, s);
+                    },
+                    Err(e) => {
+                        error!("Error when fetching certificate for {}, removing: {:?}", application_id, e);
 
-            let create_notifier = move |cert: Cursor<&[u8]>, key: Cursor<&[u8]>, updated_at: Option<Timespec>| {
-                if updated_at != last_update {
-                    Ok(Notifier {
-                        apns: Apns2Notifier::new(cert, key, sandbox),
-                        updated_at: updated_at,
-                        timestamp: precise_time_s(),
-                    })
-                } else {
-                    Err(CertificateError::NotChanged(format!("No changes to the certificate")))
+                        let mut notifier = notifiers.get_mut(application_id).unwrap();
+                        notifier.timestamp = precise_time_s();
+                        notifier.apns = None;
+                        notifier.updated_at = None;
+                    }
                 }
+            }
+        } else {
+            let create_notifier = move |cert: Cursor<&[u8]>, key: Cursor<&[u8]>, updated_at: Option<Timespec>| {
+                Ok(Notifier {
+                    apns: Some(Apns2Notifier::new(cert, key, sandbox)),
+                    updated_at: updated_at,
+                    timestamp: precise_time_s(),
+                })
             };
 
-            match self.certificate_registry.with_certificate(&key, create_notifier) {
+            match self.certificate_registry.with_certificate(application_id, create_notifier) {
                 Ok(notifier) => {
-                    notifiers.remove(&key);
-                    notifiers.insert(key.to_string(), notifier);
-                    info!("New certificate for application {}", key);
-                },
-                Err(CertificateError::NotChanged(s)) => {
-                    let mut notifier = notifiers.get_mut(&key).unwrap();
-                    notifier.timestamp = precise_time_s();
-
-                    info!("Alles gut for application {}: {:?}", key, s);
+                    notifiers.insert(application_id.to_string(), notifier);
                 },
                 Err(e) => {
-                    error!("Error when fetching certificate for {}, removing: {:?}", key, e);
-                    notifiers.remove(&key);
+                    error!("Error when fetching certificate for {}: {:?}", application_id, e);
+
+                    notifiers.insert(application_id.to_string(), Notifier {
+                        apns: None,
+                        updated_at: None,
+                        timestamp: precise_time_s(),
+                    });
                 }
             }
         }
