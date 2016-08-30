@@ -25,7 +25,7 @@ pub struct Consumer<'a> {
 }
 
 struct ApiKey {
-    pub key: String,
+    pub key: Option<String>,
     pub timestamp: f64,
 }
 
@@ -107,7 +107,7 @@ impl<'a> Consumer<'a> {
                         if !certificates.contains_key(application_id) {
                             let add_key = |api_key: &str| {
                                 ApiKey {
-                                    key: String::from(api_key),
+                                    key: Some(String::from(api_key)),
                                     timestamp: precise_time_s(),
                                 }
                             };
@@ -118,15 +118,26 @@ impl<'a> Consumer<'a> {
                                 },
                                 Err(err) => {
                                     error!("Error when fetching certificate for {}: {:?}", event.get_application_id(), err);
+
+                                    certificates.insert(String::from(application_id), ApiKey {
+                                        key: None,
+                                        timestamp: precise_time_s(),
+                                    });
                                 },
                             }
                         }
 
                         certificates.get(application_id)
                     } {
-                        let response = self.notifier.send(&event, &api_key.key);
-
-                        self.tx.send((event, Some(response))).unwrap();
+                        match api_key.key {
+                            Some(ref key) => {
+                                let response = self.notifier.send(&event, key);
+                                self.tx.send((event, Some(response))).unwrap();
+                            },
+                            None => {
+                                self.tx.send((event, None)).unwrap();
+                            }
+                        }
                     } else {
                         self.tx.send((event, None)).unwrap();
                     }

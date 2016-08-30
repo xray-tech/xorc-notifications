@@ -1,46 +1,55 @@
 use std::sync::Arc;
 use config::Config;
-use mysql::{Pool, Opts, Error as MysqlError};
+use postgres::error::{Error as PostgresError};
+use r2d2;
+use r2d2_postgres::{SslMode, PostgresConnectionManager};
 
 pub struct CertificateRegistry {
-    mysql: Pool,
+    pool: r2d2::Pool<PostgresConnectionManager>,
 }
 
 #[derive(Debug)]
 pub enum CertificateError {
-    Mysql(MysqlError),
+    Postgres(PostgresError),
     NotFoundError(String),
 }
 
 impl CertificateRegistry {
     pub fn new(config: Arc<Config>) -> CertificateRegistry {
-        let opts = Opts::from_url(&config.mysql.uri).unwrap();
+        let manager = PostgresConnectionManager::new(config.postgres.uri.as_str(), SslMode::None).unwrap();
 
         CertificateRegistry {
-            mysql: Pool::new(opts).unwrap(),
+            pool: r2d2::Pool::new(r2d2::Config::default(), manager).unwrap(),
         }
     }
 
     pub fn fetch<F, T>(&self, application: &str, f: F) -> Result<T, CertificateError>
         where F: FnOnce(&str) -> T {
 
+        info!("Loading api_key from database to {}", application);
+
         let query = "SELECT api_key \
                      FROM android_applications droid \
                      INNER JOIN applications app on app.id = droid.application_id \
-                     WHERE droid.app_store_id = :app_store_id \
+                     WHERE droid.app_store_id = $1 \
                      AND droid.enabled IS TRUE AND app.deleted_at IS NULL \
                      AND droid.api_key IS NOT NULL";
 
-        info!("Loading api_key from mysql to {}", application);
+        let connection = self.pool.get().unwrap();
+        let result = connection.query(query, &[&application]);
 
-        match self.mysql.first_exec(query, params!{"app_store_id" => application}) {
-            Ok(Some(mut row)) => {
-                let api_key: String = row.take("api_key").unwrap();
+        match result {
+            Ok(rows) => {
+                if rows.is_empty() {
+                    Err(CertificateError::NotFoundError(format!("Couldn't find a certificate for {}", application)))
+                } else {
+                    let row = rows.get(0);
+                    let api_key: String = row.get("api_key");
 
-                Ok(f(&api_key))
+                    Ok(f(&api_key))
+                }
             },
-            Ok(None) => Err(CertificateError::NotFoundError(format!("Couldn't find a certificate for {}", application))),
-            Err(e) => Err(CertificateError::Mysql(e)),
+            Err(e) => Err(CertificateError::Postgres(e)),
         }
     }
 }

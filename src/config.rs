@@ -5,7 +5,7 @@ use toml;
 
 #[derive(RustcEncodable, RustcDecodable, Debug)]
 pub struct Config {
-    pub mysql: MysqlConfig,
+    pub postgres: PostgresConfig,
     pub rabbitmq: RabbitMqConfig,
     pub metrics: MetricsConfig,
 }
@@ -69,6 +69,6 @@ pub struct MetricsConfig {
 }
 
 #[derive(RustcEncodable, RustcDecodable, Debug)]
-pub struct MysqlConfig {
+pub struct PostgresConfig {
     pub uri: String,
 }

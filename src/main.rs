@@ -14,9 +14,9 @@ extern crate influent;
 extern crate histogram;
 extern crate rustc_serialize;
 extern crate time;
-
-#[macro_use]
-extern crate mysql;
+extern crate postgres;
+extern crate r2d2;
+extern crate r2d2_postgres;
 
 mod logger;
 mod config;
