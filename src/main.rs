@@ -4,8 +4,9 @@ extern crate env_logger;
 extern crate syslog;
 extern crate hyper;
 
-#[macro_use]
-extern crate mysql;
+extern crate postgres;
+extern crate r2d2;
+extern crate r2d2_postgres;
 extern crate apns2;
 extern crate amqp;
 extern crate chan_signal;
