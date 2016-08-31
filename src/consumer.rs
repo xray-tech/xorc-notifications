@@ -103,30 +103,17 @@ impl<'a> Consumer<'a> {
         while self.control.load(Ordering::Relaxed) {
             for result in channel.basic_get(&self.config.rabbitmq.queue, false) {
                 if let Ok(event) = parse_from_bytes::<PushNotification>(&result.body) {
-                    if let Some(notifier) = {
-                        let application_id = event.get_application_id();
+                    self.update_notifiers(&mut notifiers, event.get_application_id(), sandbox);
 
-                        self.update_notifiers(&mut notifiers, application_id, sandbox);
+                    let response = match notifiers.get(event.get_application_id()) {
+                        Some(&Notifier { apns: Some(ref apns), timestamp: _, updated_at: _ }) => Some(apns.send(&event)),
+                        _ => None,
+                    };
 
-                        notifiers.get(application_id)
-                    } {
-                        match notifier.apns {
-                            Some(ref apns) => {
-                                let response = apns.send(&event);
-                                self.metrics.gauges.in_flight.increment(1);
-                                self.tx_response.send((event, Some(response))).unwrap();
-                            },
-                            None => {
-                                error!("No notifier for {}. Certificate not loaded.", event.get_application_id());
-
-                                self.metrics.gauges.in_flight.increment(1);
-                                self.tx_response.send((event, None)).unwrap();
-                            }
-                        }
-                    } else {
-                        self.metrics.gauges.in_flight.increment(1);
-                        self.tx_response.send((event, None)).unwrap();
-                    }
+                    self.metrics.gauges.in_flight.increment(1);
+                    self.tx_response.send((event, response)).unwrap();
+                } else {
+                    error!("Broken protobuf data");
                 }
 
                 result.ack();
@@ -141,45 +128,43 @@ impl<'a> Consumer<'a> {
     }
 
     fn update_notifiers(&self, notifiers: &mut HashMap<String, Notifier>, application_id: &str, sandbox: &bool) {
-        if notifiers.get(application_id).is_some() {
-            if precise_time_s() - notifiers.get(application_id).unwrap().timestamp >= self.cache_ttl {
-                let last_update = notifiers.get(application_id).unwrap().updated_at.clone();
+        if notifiers.get(application_id).is_some() && self.is_expired(notifiers.get(application_id).unwrap()){
+            let last_update = notifiers.get(application_id).unwrap().updated_at.clone();
 
-                let create_notifier = move |cert: Cursor<&[u8]>, key: Cursor<&[u8]>, updated_at: Option<Timespec>| {
-                    if updated_at != last_update {
-                        Ok(Notifier {
-                            apns: Some(Apns2Notifier::new(cert, key, sandbox)),
-                            updated_at: updated_at,
-                            timestamp: precise_time_s(),
-                        })
-                    } else {
-                        Err(CertificateError::NotChanged(format!("No changes to the certificate")))
-                    }
-                };
+            let create_notifier = move |cert: Cursor<&[u8]>, key: Cursor<&[u8]>, updated_at: Option<Timespec>| {
+                if updated_at != last_update {
+                    Ok(Notifier {
+                        apns: Some(Apns2Notifier::new(cert, key, sandbox)),
+                        updated_at: updated_at,
+                        timestamp: precise_time_s(),
+                    })
+                } else {
+                    Err(CertificateError::NotChanged(format!("No changes to the certificate")))
+                }
+            };
 
-                match self.certificate_registry.with_certificate(&application_id, create_notifier) {
-                    Ok(notifier) => {
-                        notifiers.remove(application_id);
-                        notifiers.insert(application_id.to_string(), notifier);
-                        info!("New certificate for application {}", application_id);
-                    },
-                    Err(CertificateError::NotChanged(s)) => {
-                        let mut notifier = notifiers.get_mut(application_id).unwrap();
-                        notifier.timestamp = precise_time_s();
+            match self.certificate_registry.with_certificate(&application_id, create_notifier) {
+                Ok(notifier) => {
+                    notifiers.remove(application_id);
+                    notifiers.insert(application_id.to_string(), notifier);
+                    info!("New certificate for application {}", application_id);
+                },
+                Err(CertificateError::NotChanged(s)) => {
+                    let mut notifier = notifiers.get_mut(application_id).unwrap();
+                    notifier.timestamp = precise_time_s();
 
-                        info!("Alles gut for application {}: {:?}", application_id, s);
-                    },
-                    Err(e) => {
-                        error!("Error when fetching certificate for {}, removing: {:?}", application_id, e);
+                    info!("Alles gut for application {}: {:?}", application_id, s);
+                },
+                Err(e) => {
+                    error!("Error when fetching certificate for {}, removing: {:?}", application_id, e);
 
-                        let mut notifier = notifiers.get_mut(application_id).unwrap();
-                        notifier.timestamp = precise_time_s();
-                        notifier.apns = None;
-                        notifier.updated_at = None;
-                    }
+                    let mut notifier = notifiers.get_mut(application_id).unwrap();
+                    notifier.timestamp = precise_time_s();
+                    notifier.apns = None;
+                    notifier.updated_at = None;
                 }
             }
-        } else {
+        } else if notifiers.get(application_id).is_none() {
             let create_notifier = move |cert: Cursor<&[u8]>, key: Cursor<&[u8]>, updated_at: Option<Timespec>| {
                 Ok(Notifier {
                     apns: Some(Apns2Notifier::new(cert, key, sandbox)),
@@ -203,5 +188,9 @@ impl<'a> Consumer<'a> {
                 }
             }
         }
+    }
+
+    fn is_expired(&self, notifier: &Notifier) -> bool {
+        precise_time_s() - notifier.timestamp >= self.cache_ttl
     }
 }
