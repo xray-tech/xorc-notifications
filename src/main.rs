@@ -91,7 +91,7 @@ fn main() {
 
     let mut threads : Vec<JoinHandle<_>> = (0..number_of_threads).map(|i| {
         let notifier     = Notifier::new(metrics.clone());
-        let mut consumer = Consumer::new(control.clone(), config.clone(), notifier,
+        let consumer = Consumer::new(control.clone(), config.clone(), notifier,
             tx.clone(), certificate_registry.clone());
 
         thread::spawn(move || {

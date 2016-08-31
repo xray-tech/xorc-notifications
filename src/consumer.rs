@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 use std::sync::mpsc::Sender;
@@ -11,17 +11,18 @@ use config::Config;
 use hyper::error::Error;
 use notifier::Notifier;
 use producer::FcmData;
-use certificate_registry::CertificateRegistry;
+use certificate_registry::{CertificateRegistry, CertificateError};
 use time::precise_time_s;
 
 pub struct Consumer<'a> {
-    channel: Channel,
+    channel: Mutex<Channel>,
     session: Session,
     notifier: Notifier<'a>,
     control: Arc<AtomicBool>,
     config: Arc<Config>,
     tx: Sender<FcmData>,
     registry: Arc<CertificateRegistry>,
+    cache_ttl: f64,
 }
 
 struct ApiKey {
@@ -31,7 +32,9 @@ struct ApiKey {
 
 impl<'a> Drop for Consumer<'a> {
     fn drop(&mut self) {
-        let _ = self.channel.close(200, "Bye!");
+        let mut channel = self.channel.lock().unwrap();
+
+        let _ = channel.close(200, "Bye!");
         let _ = self.session.close(200, "Good bye!");
     }
 }
@@ -76,71 +79,32 @@ impl<'a> Consumer<'a> {
             Table::new()).unwrap();
 
         Consumer {
-            channel: channel,
+            channel: Mutex::new(channel),
             session: session,
             notifier: notifier,
             control: control,
             config: config,
             tx: tx,
             registry: registry,
+            cache_ttl: 10.0,
         }
     }
 
-    pub fn consume(&mut self) -> Result<(), Error> {
+    pub fn consume(&self) -> Result<(), Error> {
         let mut certificates: HashMap<String, ApiKey> = HashMap::new();
-        let cache_ttl = 10.0;
+        let mut channel = self.channel.lock().unwrap();
 
         while self.control.load(Ordering::Relaxed) {
-            for result in self.channel.basic_get(&self.config.rabbitmq.queue, false) {
+            for result in channel.basic_get(&self.config.rabbitmq.queue, false) {
                 if let Ok(event) = parse_from_bytes::<PushNotification>(&result.body) {
-                    if let Some(api_key) = {
-                        let application_id = event.get_application_id();
+                    self.update_certificates(&mut certificates, event.get_application_id());
 
-                        let expired_keys: Vec<_> = certificates
-                            .iter()
-                            .filter(|&(_, ref v)| precise_time_s() - v.timestamp >= cache_ttl)
-                            .map(|(k, _)| k.clone())
-                            .collect();
+                    let response = match certificates.get(event.get_application_id()) {
+                        Some(&ApiKey { key: Some(ref key), timestamp: _ }) => Some(self.notifier.send(&event, key)),
+                        _ => None,
+                    };
 
-                        for key in expired_keys { certificates.remove(&key); }
-
-                        if !certificates.contains_key(application_id) {
-                            let add_key = |api_key: &str| {
-                                ApiKey {
-                                    key: Some(String::from(api_key)),
-                                    timestamp: precise_time_s(),
-                                }
-                            };
-
-                            match self.registry.fetch(application_id, add_key) {
-                                Ok(api_key) => {
-                                    certificates.insert(String::from(application_id), api_key);
-                                },
-                                Err(err) => {
-                                    error!("Error when fetching certificate for {}: {:?}", event.get_application_id(), err);
-
-                                    certificates.insert(String::from(application_id), ApiKey {
-                                        key: None,
-                                        timestamp: precise_time_s(),
-                                    });
-                                },
-                            }
-                        }
-
-                        certificates.get(application_id)
-                    } {
-                        match api_key.key {
-                            Some(ref key) => {
-                                let response = self.notifier.send(&event, key);
-                                self.tx.send((event, Some(response))).unwrap();
-                            },
-                            None => {
-                                self.tx.send((event, None)).unwrap();
-                            }
-                        }
-                    } else {
-                        self.tx.send((event, None)).unwrap();
-                    }
+                    self.tx.send((event, response)).unwrap();
                 } else {
                     error!("Broken protobuf data");
                 }
@@ -154,6 +118,42 @@ impl<'a> Consumer<'a> {
         }
 
         Ok(())
+    }
+
+    fn update_certificates(&self, certificates: &mut HashMap<String, ApiKey>, application_id: &str) {
+        let fetch_key = |api_key: &str| {
+            ApiKey {
+                key: Some(String::from(api_key)),
+                timestamp: precise_time_s(),
+            }
+        };
+
+        let add_key = move |result: Result<ApiKey, CertificateError>, certificates: &mut HashMap<String, ApiKey>| {
+            match result {
+                Ok(api_key) => {
+                    certificates.insert(String::from(application_id), api_key);
+                },
+                Err(err) => {
+                    error!("Error when fetching certificate for {}: {:?}", application_id, err);
+
+                    certificates.insert(String::from(application_id), ApiKey {
+                        key: None,
+                        timestamp: precise_time_s(),
+                    });
+                },
+            }
+        };
+
+        if certificates.get(application_id).is_some() && self.is_expired(certificates.get(application_id).unwrap()) {
+            certificates.remove(application_id);
+            add_key(self.registry.fetch(application_id, fetch_key), certificates);
+        } else if certificates.get(application_id).is_none() {
+            add_key(self.registry.fetch(application_id, fetch_key), certificates);
+        }
+    }
+
+    fn is_expired(&self, key: &ApiKey) -> bool {
+        precise_time_s() - key.timestamp >= self.cache_ttl
     }
 }
 
