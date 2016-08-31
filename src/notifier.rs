@@ -46,7 +46,7 @@ impl<'a> Notifier<'a> {
 
             message.notification(builder.finalize());
         } else {
-            let key_values = notification.get_message().get_key_value().iter();
+            let key_values = notification.get_message().get_data().iter();
 
             let data = key_values.fold(HashMap::new(), |mut acc, kv| {
                 acc.insert(kv.get_key(), kv.get_value());
