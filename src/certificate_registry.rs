@@ -11,6 +11,7 @@ pub enum CertificateError {
     Postgres(PostgresError),
     NotFoundError(String),
     NotChanged(String),
+    ApplicationIdError(String),
 }
 
 pub struct CertificateRegistry {
@@ -34,13 +35,17 @@ impl CertificateRegistry {
         let query = "SELECT certificate, private_key, ios.updated_at \
                      FROM ios_applications ios \
                      INNER JOIN applications app ON app.id = ios.application_id \
-                     WHERE ios.app_store_id = $1 \
+                     WHERE ios.application_id = $1 \
                      AND ios.enabled IS TRUE AND app.deleted_at IS NULL \
                      AND ios.certificate IS NOT NULL AND ios.private_key IS NOT NULL \
                      LIMIT 1";
 
         let connection = self.pool.get().unwrap();
-        let result = connection.query(query, &[&application]);
+
+        let result = match application.parse::<i32>() {
+            Ok(application_id) => connection.query(query, &[&application_id]),
+            Err(_) => return Err(CertificateError::ApplicationIdError(format!("Invalid application_id: '{}'", application))),
+        };
 
         match result {
             Ok(rows) => {
