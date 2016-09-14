@@ -12,6 +12,7 @@ pub struct CertificateRegistry {
 pub enum CertificateError {
     Postgres(PostgresError),
     NotFoundError(String),
+    ApplicationIdError(String),
 }
 
 impl CertificateRegistry {
@@ -31,12 +32,16 @@ impl CertificateRegistry {
         let query = "SELECT api_key \
                      FROM android_applications droid \
                      INNER JOIN applications app on app.id = droid.application_id \
-                     WHERE droid.app_store_id = $1 \
+                     WHERE droid.application_id = $1 \
                      AND droid.enabled IS TRUE AND app.deleted_at IS NULL \
                      AND droid.api_key IS NOT NULL";
 
         let connection = self.pool.get().unwrap();
-        let result = connection.query(query, &[&application]);
+
+        let result = match application.parse::<i32>() {
+            Ok(application_id) => connection.query(query, &[&application_id]),
+            Err(_) => return Err(CertificateError::ApplicationIdError(format!("Invalid application_id: '{}'", application))),
+        };
 
         match result {
             Ok(rows) => {
