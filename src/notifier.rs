@@ -24,8 +24,9 @@ impl<'a> Notifier<'a> {
 
         if notification.has_localized() {
             let localized   = notification.get_localized();
-            let mut builder = NotificationBuilder::new(localized.get_title());
+            let mut builder = NotificationBuilder::new();
 
+            if localized.has_title()         { builder.title(localized.get_title());                 }
             if localized.has_tag()           { builder.tag(localized.get_tag());                     }
             if localized.has_body()          { builder.body(localized.get_body());                   }
             if localized.has_icon()          { builder.icon(localized.get_icon());                   }
