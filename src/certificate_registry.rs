@@ -18,6 +18,14 @@ pub struct CertificateRegistry {
     pool: r2d2::Pool<PostgresConnectionManager>
 }
 
+pub struct CertificateData<'a> {
+    pub certificate: Cursor<&'a [u8]>,
+    pub private_key: Cursor<&'a [u8]>,
+    pub updated_at: Option<Timespec>,
+    pub apns_topic: Option<String>
+}
+
+
 impl CertificateRegistry {
     pub fn new(config: Arc<Config>) -> CertificateRegistry {
         let manager = PostgresConnectionManager::new(config.postgres.uri.as_str(), SslMode::None).unwrap();
@@ -28,11 +36,11 @@ impl CertificateRegistry {
     }
 
     pub fn with_certificate<T, F>(&self, application: &str, f: F) -> Result<T, CertificateError>
-        where F: FnOnce(Cursor<&[u8]>, Cursor<&[u8]>, Option<Timespec>) -> Result<T, CertificateError> {
+        where F: FnOnce(CertificateData) -> Result<T, CertificateError> {
 
         info!("Loading certificates from database for {}", application);
 
-        let query = "SELECT certificate, private_key, ios.updated_at \
+        let query = "SELECT ios.certificate, ios.private_key, ios.apns_topic, ios.updated_at \
                      FROM ios_applications ios \
                      INNER JOIN applications app ON app.id = ios.application_id \
                      WHERE ios.application_id = $1 \
@@ -53,11 +61,13 @@ impl CertificateRegistry {
                     Err(CertificateError::NotFoundError(format!("Couldn't find a certificate for {}", application)))
                 } else {
                     let row = rows.get(0);
-                    let updated_at: Option<Timespec> = row.get("updated_at");
 
-                    f(Cursor::new(row.get_bytes("certificate").unwrap()),
-                      Cursor::new(row.get_bytes("private_key").unwrap()),
-                      updated_at)
+                    f(CertificateData {
+                        certificate: Cursor::new(row.get_bytes("certificate").unwrap()),
+                        private_key: Cursor::new(row.get_bytes("private_key").unwrap()),
+                        updated_at: row.get("updated_at"),
+                        apns_topic: row.get("apns_topic"),
+                    })
                 }
             },
             Err(e) => Err(CertificateError::Postgres(e)),

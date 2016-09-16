@@ -5,12 +5,14 @@ use rustc_serialize::json::{Json};
 
 pub struct Apns2Notifier {
     apns2_provider: Provider,
+    pub apns_topic: Option<String>,
 }
 
 impl Apns2Notifier {
-    pub fn new<R: Read>(mut certificate: R, mut private_key: R, sandbox: &bool) -> Apns2Notifier {
+    pub fn new<R: Read>(mut certificate: R, mut private_key: R, apns_topic: Option<String>, sandbox: &bool) -> Apns2Notifier {
         Apns2Notifier {
             apns2_provider: Provider::from_reader(*sandbox, &mut certificate, &mut private_key),
+            apns_topic: apns_topic,
         }
     }
 
@@ -19,11 +21,13 @@ impl Apns2Notifier {
         let notification_data = event.get_apple();
         let headers           = notification_data.get_headers();
 
+
         let options = NotificationOptions {
             apns_priority:   if headers.has_apns_priority()   { Some(headers.get_apns_priority())   } else { None },
             apns_id:         if event.has_correlation_id()    { Some(event.get_correlation_id())    } else { None },
             apns_expiration: if headers.has_apns_expiration() { Some(headers.get_apns_expiration()) } else { None },
-            apns_topic:      if headers.has_apns_topic()      { Some(headers.get_apns_topic())      } else { None }, ..Default::default()
+            apns_topic:      if headers.has_apns_topic()      { Some(headers.get_apns_topic())      } else { self.apns_topic.as_ref().map(|v| &**v) },
+            ..Default::default()
         };
 
         let badge = if notification_data.has_badge() {

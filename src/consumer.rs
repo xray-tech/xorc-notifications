@@ -2,7 +2,6 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
-use std::io::Cursor;
 use std::thread;
 use amqp::{Session, Channel, Table, Basic, Options};
 use events::push_notification::PushNotification;
@@ -12,7 +11,7 @@ use protobuf::parse_from_bytes;
 use config::Config;
 use metrics::Metrics;
 use hyper::error::Error;
-use certificate_registry::{CertificateRegistry, CertificateError};
+use certificate_registry::{CertificateRegistry, CertificateError, CertificateData};
 use std::sync::mpsc::Sender;
 use producer::ApnsResponse;
 use time::{precise_time_s, Timespec};
@@ -131,11 +130,11 @@ impl<'a> Consumer<'a> {
         if notifiers.get(application_id).is_some() && self.is_expired(notifiers.get(application_id).unwrap()){
             let last_update = notifiers.get(application_id).unwrap().updated_at.clone();
 
-            let create_notifier = move |cert: Cursor<&[u8]>, key: Cursor<&[u8]>, updated_at: Option<Timespec>| {
-                if updated_at != last_update {
+            let create_notifier = move |cert: CertificateData| {
+                if cert.updated_at != last_update {
                     Ok(Notifier {
-                        apns: Some(Apns2Notifier::new(cert, key, sandbox)),
-                        updated_at: updated_at,
+                        apns: Some(Apns2Notifier::new(cert.certificate, cert.private_key, cert.apns_topic, sandbox)),
+                        updated_at: cert.updated_at,
                         timestamp: precise_time_s(),
                     })
                 } else {
@@ -165,10 +164,10 @@ impl<'a> Consumer<'a> {
                 }
             }
         } else if notifiers.get(application_id).is_none() {
-            let create_notifier = move |cert: Cursor<&[u8]>, key: Cursor<&[u8]>, updated_at: Option<Timespec>| {
+            let create_notifier = move |cert: CertificateData| {
                 Ok(Notifier {
-                    apns: Some(Apns2Notifier::new(cert, key, sandbox)),
-                    updated_at: updated_at,
+                    apns: Some(Apns2Notifier::new(cert.certificate, cert.private_key, cert.apns_topic, sandbox)),
+                    updated_at: cert.updated_at,
                     timestamp: precise_time_s(),
                 })
             };
