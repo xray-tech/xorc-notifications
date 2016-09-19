@@ -4,7 +4,7 @@ use std::io::Read;
 use rustc_serialize::json::{Json};
 
 pub struct Apns2Notifier {
-    apns2_provider: Provider,
+    pub apns2_provider: Provider,
     pub apns_topic: Option<String>,
 }
 
@@ -20,7 +20,6 @@ impl Apns2Notifier {
         let token             = DeviceToken::new(event.get_device_token());
         let notification_data = event.get_apple();
         let headers           = notification_data.get_headers();
-
 
         let options = NotificationOptions {
             apns_priority:   if headers.has_apns_priority()   { Some(headers.get_apns_priority())   } else { None },

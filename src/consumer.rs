@@ -130,6 +130,12 @@ impl<'a> Consumer<'a> {
         if notifiers.get(application_id).is_some() && self.is_expired(notifiers.get(application_id).unwrap()){
             let last_update = notifiers.get(application_id).unwrap().updated_at.clone();
 
+            let mut ping_result = None;
+
+            if let Some(ref apns) = notifiers.get(application_id).unwrap().apns {
+                ping_result = Some(apns.apns2_provider.client.ping());
+            }
+
             let create_notifier = move |cert: CertificateData| {
                 if cert.updated_at != last_update {
                     Ok(Notifier {
@@ -138,7 +144,19 @@ impl<'a> Consumer<'a> {
                         timestamp: precise_time_s(),
                     })
                 } else {
-                    Err(CertificateError::NotChanged(format!("No changes to the certificate")))
+                    match ping_result {
+                        Some(Ok(())) => Err(CertificateError::NotChanged(format!("No changes to the certificate, ping ok"))),
+                        None => Err(CertificateError::NotChanged(format!("No changes to the certificate"))),
+                        Some(Err(e)) => {
+                            error!("Error when pinging apns, reconnecting: {}", e);
+
+                            Ok(Notifier {
+                                apns: Some(Apns2Notifier::new(cert.certificate, cert.private_key, cert.apns_topic, sandbox)),
+                                updated_at: cert.updated_at,
+                                timestamp: precise_time_s(),
+                            })
+                        }
+                    }
                 }
             };
 
