@@ -4,9 +4,16 @@ artifactory = http://repo:katti@artifactory.service.consul:8081/artifactory/fcm
 commit_id = `git log --format="%h" -n 1`
 marathon = http://leader.mesos.service.consul:8080/v2/apps/
 influx = "http://influxdb.service.consul:8086/write?db=deployments"
-config = deploy/config.mar.template
 curl = `which curl`
 deplicity = `which deplicity`
+
+ifeq (master, `git rev-parse --abbrev-ref HEAD`)
+	stage = production
+else
+	stage = staging
+endif
+
+config = deploy/$(stage).mar.template
 
 .PHONY: help
 
@@ -20,5 +27,5 @@ auto_update: ## Update the running Mesos configuration, don't ask questions
 	$(deplicity) -f -i $(influx) -m $(marathon) -j $(config) -v $(commit_id) simple
 
 upload: ## Upload the binary to the repository
-	$(curl) -T $(executable) $(artifactory)/production/fcm-$(commit_id)
+	$(curl) -T $(executable) $(artifactory)/$(stage)/fcm-$(commit_id)
 
