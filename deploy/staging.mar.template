@@ -1,10 +1,10 @@
 {
-  "id": "push-notifications/apns2",
-  "instances": 3,
+  "id": "push-notifications/apns2/staging",
+  "instances": 1,
   "cpus": 0.1,
-  "mem": 128,
+  "mem": 20,
   "labels": {
-    "collectd_app": "apns2",
+    "collectd_app": "apns2-staging",
     "commit_id": "$commit"
   },
   "constraints": [
