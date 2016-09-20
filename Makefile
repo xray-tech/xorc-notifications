@@ -6,8 +6,9 @@ marathon = http://leader.mesos.service.consul:8080/v2/apps/
 influx = "http://influxdb.service.consul:8086/write?db=deployments"
 curl = `which curl`
 deplicity = `which deplicity`
+branch = $(shell git rev-parse --abbrev-ref HEAD)
 
-ifeq (master, `git rev-parse --abbrev-ref HEAD`)
+ifeq ($(branch), master)
 	stage = production
 else
 	stage = staging
