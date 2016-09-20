@@ -28,5 +28,6 @@ auto_update: ## Update the running Mesos configuration, don't ask questions
 	$(deplicity) -f -i $(influx) -m $(marathon) -j $(config) -v $(commit_id) simple
 
 upload: ## Upload the binary to the repository
+	$(info $$branch is [${branch}])
 	$(curl) -T $(executable) $(artifactory)/$(stage)/apns2-$(commit_id)
 
