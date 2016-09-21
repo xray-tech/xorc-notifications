@@ -7,11 +7,14 @@ influx = "http://influxdb.service.consul:8086/write?db=deployments"
 curl = `which curl`
 deplicity = `which deplicity`
 branch = $(shell git rev-parse --abbrev-ref HEAD)
+stage = staging
 
 ifeq ($(branch), master)
 	stage = production
-else
-	stage = staging
+endif
+
+ifeq ($(STAGE), production)
+	stage = production
 endif
 
 config = deploy/$(stage).mar.template
