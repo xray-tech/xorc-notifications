@@ -92,13 +92,13 @@ impl<'a> ResponseProducer<'a> {
                     }
 
                     if result.error.is_none() {
-                        info!("{:?}", result);
+                        info!("Push notification result: '{:?}', event: '{:?}'", result, event);
 
                         self.metrics.counters.successful.increment(1);
                         fcm_result.set_successful(true);
                         fcm_result.set_status(Success);
                     } else {
-                        error!("{:?}", result);
+                        error!("Error in sending push notification: '{:?}', event: '{:?}'", result, event);
 
                         self.metrics.counters.failure.increment(1);
                         fcm_result.set_successful(false);
@@ -132,7 +132,7 @@ impl<'a> ResponseProducer<'a> {
                         event.write_to_bytes().unwrap()).unwrap();
                 },
                 Ok((mut event, Some(Err(error)))) => {
-                    error!("{:?}", &error);
+                    error!("Error in sending push notification: '{:?}', event: '{:?}'", &error, event);
 
                     self.metrics.counters.failure.increment(1);
                     let mut fcm_result = FcmResult::new();
@@ -158,6 +158,7 @@ impl<'a> ResponseProducer<'a> {
                         event.write_to_bytes().unwrap()).unwrap();
                 },
                 Ok((mut event, None)) => {
+                    error!("Certificate missing for event: '{:?}'", event);
                     self.metrics.counters.certificate_missing.increment(1);
 
                     let mut fcm_result = FcmResult::new();
