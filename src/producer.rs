@@ -85,8 +85,8 @@ impl<'a> ResponseProducer<'a> {
 
                     match response {
                         Ok(result) => {
-                            info!("Sent push notification for {}: {:?} ({} ms)",
-                                event.get_application_id(), result, response_time / 1000000);
+                            info!("Push notification result: '{:?}', event: '{:?}' ({} ms)",
+                                result, event, response_time / 1000000);
 
                             apns_result.set_successful(true);
                             apns_result.set_status(Self::convert_status(result.status));
@@ -94,9 +94,8 @@ impl<'a> ResponseProducer<'a> {
                             self.metrics.counters.successful.increment(1);
                         },
                         Err(result) => {
-                            error!("Error in sending push notification for {}: {:?} ({} ms)",
-                                event.get_application_id(),
-                                result, response_time / 1000000);
+                            error!("Error in sending push notification: '{:?}', event: '{:?}' ({} ms)",
+                                result, event, response_time / 1000000);
 
                             apns_result.set_status(Self::convert_status(result.status));
                             apns_result.set_successful(false);
