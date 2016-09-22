@@ -11,5 +11,3 @@ node('master') {
   input "Ready to deploy?"
   sh "STAGE=production make auto_update"
 }
-
-
