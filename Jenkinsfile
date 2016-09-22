@@ -1,15 +1,17 @@
 node('master') {
-  sh "git submodule update --init"
+  wrap([$class: 'AnsiColorBuildWrapper', 'colorMapName': 'XTerm']) {
+    sh "git submodule update --init"
 
-  stage "Create the binary"
-  sh "cargo build --release"
+    stage "Create the binary"
+    sh "cargo build --release"
 
-  stage "Upload binary to repository"
-  sh "make upload"
+    stage "Upload binary to repository"
+    sh "make upload"
 
-  stage "Deployment"
-  input "Ready to deploy?"
-  sh "make auto_update"
+    stage "Deployment"
+    input "Ready to deploy?"
+    sh "make auto_update"
+  }
 }
 
 
