@@ -1,9 +1,9 @@
-[mysql]
-uri = "mysql://root:kulli@localhost:3306/crm"
+[postgres]
+uri = "postgres://root:kulli@localhost:5432/crm"
 
 [rabbitmq]
 queue = "ha.apn.queue"
-exchange = "push-notifications"
+exchange = "ha.push-notifications"
 exchange_type = "topic"
 response_exchange = "push-notification-responses"
 response_exchange_type = "topic"
