@@ -5,11 +5,11 @@ node('master') {
   sh "cargo build --release"
 
   stage "Upload binary to repository"
-  sh "STAGE=production make upload"
+  sh "make upload"
 
   stage "Deployment"
   input "Ready to deploy?"
-  sh "STAGE=production make auto_update"
+  sh "make auto_update"
 }
 
 
