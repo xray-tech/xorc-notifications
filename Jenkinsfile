@@ -1,5 +1,9 @@
 node('master') {
   wrap([$class: 'AnsiColorBuildWrapper', 'colorMapName': 'XTerm']) {
+    stage 'Checkout'
+    checkout scm
+
+    stage 'Submodule update'
     sh "git submodule update --init"
 
     stage "Create the binary"
