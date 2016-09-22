@@ -10,10 +10,10 @@ node('master') {
     sh "cargo build --release"
 
     stage "Upload binary to repository"
-    sh "make upload"
+    sh "STAGE=production make upload"
 
     stage "Deployment"
     input "Ready to deploy?"
-    sh "make auto_update"
+    sh "STAGE=production make auto_update"
   }
 }
