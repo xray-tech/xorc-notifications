@@ -1,10 +1,10 @@
-[artifactory]
-base_uri = "http://repo:katti@artifactory.service.consul:8081/artifactory"
-certificate_path = "fcm_keys"
+[postgres]
+uri = "postgres://root:kulli@localhost:5432/crm"
+cache_ttl = 10
 
 [rabbitmq]
 queue = "ha.apn.queue"
-exchange = "push-notifications"
+exchange = "ha.push-notifications"
 exchange_type = "topic"
 response_exchange = "push-notification-responses"
 response_exchange_type = "topic"
