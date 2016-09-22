@@ -1,13 +1,19 @@
 node('master') {
-  sh "git submodule update --init"
+  wrap([$class: 'AnsiColorBuildWrapper', 'colorMapName': 'XTerm']) {
+    stage 'Checkout'
+    checkout scm
 
-  stage "Create the binary"
-  sh "cargo build --release"
+    stage 'Submodule update'
+    sh "git submodule update --init"
 
-  stage "Upload binary to repository"
-  sh "STAGE=production make upload"
+    stage "Create the binary"
+    sh "cargo build --release"
 
-  stage "Deployment"
-  input "Ready to deploy?"
-  sh "STAGE=production make auto_update"
+    stage "Upload binary to repository"
+    sh "STAGE=production make upload"
+
+    stage "Deployment"
+    input "Ready to deploy?"
+    sh "STAGE=production make auto_update"
+  }
 }
