@@ -45,7 +45,16 @@ impl<'a> Notifier<'a> {
                 builder.body_loc_args(localized.get_body_loc_args().to_vec());
             }
 
+            let key_values = localized.get_data().iter();
+            let data = key_values.fold(HashMap::new(), |mut acc, kv| {
+                    acc.insert(kv.get_key(), kv.get_value());
+                    acc
+            });
+            if !data.is_empty() {
+                message.data(data);
+            }
             message.notification(builder.finalize());
+
         } else {
             let key_values = notification.get_message().get_data().iter();
 
