@@ -47,8 +47,8 @@ impl<'a> Notifier<'a> {
 
             let key_values = localized.get_data().iter();
             let data = key_values.fold(HashMap::new(), |mut acc, kv| {
-                    acc.insert(kv.get_key(), kv.get_value());
-                    acc
+                acc.insert(kv.get_key(), kv.get_value());
+                acc
             });
             if !data.is_empty() {
                 message.data(data);
