@@ -148,7 +148,7 @@ dependencies = [
 [[package]]
 name = "fcm"
 version = "0.1.1"
-source = "git+https://github.com/pimeys/fcm-rust#6041853a203fcf826e64cf2420fabfffd8a18dce"
+source = "git+https://github.com/pimeys/fcm-rust#2952fa4167ce1569765d4abf793b3e73224a9049"
 dependencies = [
  "hyper 0.9.10 (registry+https://github.com/rust-lang/crates.io-index)",
  "retry-after 0.2.0 (git+https://github.com/pimeys/retry-after)",
