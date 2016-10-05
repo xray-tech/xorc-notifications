@@ -27,7 +27,6 @@ mod config;
 mod certificate_registry;
 mod producer;
 
-use log::*;
 use syslog::Facility;
 use logger::SyslogLogger;
 use std::sync::{Arc};
