@@ -139,7 +139,7 @@ impl<'a> ResponseProducer<'a> {
                     fcm_result.set_successful(false);
 
                     match error {
-                        FcmError::ServerError           => fcm_result.set_status(ServerError),
+                        FcmError::ServerError(_)        => fcm_result.set_status(ServerError),
                         FcmError::Unauthorized          => fcm_result.set_status(Unauthorized),
                         FcmError::InvalidMessage(error) => {
                             fcm_result.set_status(InvalidMessage);
