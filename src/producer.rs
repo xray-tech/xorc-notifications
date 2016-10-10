@@ -152,9 +152,9 @@ impl<'a> ResponseProducer<'a> {
                                     cmp::max(0 as i64, retry_time.timestamp() - UTC::now().timestamp()) as u32
                                 }
                                 None => {
-                                    if event.has_retry_after() {
+                                    if event.has_retry_count() {
                                         let base: u32 = 2;
-                                        base.pow(event.get_retry_after())
+                                        base.pow(event.get_retry_count())
                                     } else {
                                         1
                                     }
