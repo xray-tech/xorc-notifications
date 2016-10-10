@@ -106,9 +106,9 @@ impl<'a> ResponseProducer<'a> {
 
                             }
 
-                            let retry_after = if event.has_retry_after() {
+                            let retry_after = if event.has_retry_count() {
                                 let base: u32 = 2;
-                                base.pow(event.get_retry_after())
+                                base.pow(event.get_retry_count())
                             } else {
                                 1
                             };
