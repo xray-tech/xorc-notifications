@@ -22,7 +22,8 @@ pub struct CertificateData<'a> {
     pub certificate: Cursor<&'a [u8]>,
     pub private_key: Cursor<&'a [u8]>,
     pub updated_at: Option<Timespec>,
-    pub apns_topic: Option<String>
+    pub apns_topic: Option<String>,
+    pub is_sandbox: bool
 }
 
 
@@ -40,7 +41,7 @@ impl CertificateRegistry {
 
         info!("Loading certificates from database for {}", application);
 
-        let query = "SELECT ios.certificate, ios.private_key, ios.apns_topic, ios.updated_at \
+        let query = "SELECT ios.certificate, ios.private_key, ios.apns_topic, ios.updated_at, ios.is_sandbox \
                      FROM ios_applications ios \
                      INNER JOIN applications app ON app.id = ios.application_id \
                      WHERE ios.application_id = $1 \
@@ -67,6 +68,7 @@ impl CertificateRegistry {
                         private_key: Cursor::new(row.get_bytes("private_key").unwrap()),
                         updated_at: row.get("updated_at"),
                         apns_topic: row.get("apns_topic"),
+                        is_sandbox: row.get("is_sandbox"),
                     })
                 }
             },

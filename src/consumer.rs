@@ -95,14 +95,14 @@ impl<'a> Consumer<'a> {
         }
     }
 
-    pub fn consume(&self, sandbox: &bool) -> Result<(), Error> {
+    pub fn consume(&self) -> Result<(), Error> {
         let mut notifiers: HashMap<String, Notifier> = HashMap::new();
         let mut channel = self.channel.lock().unwrap();
 
         while self.control.load(Ordering::Relaxed) {
             for result in channel.basic_get(&self.config.rabbitmq.queue, false) {
                 if let Ok(event) = parse_from_bytes::<PushNotification>(&result.body) {
-                    self.update_notifiers(&mut notifiers, event.get_application_id(), sandbox);
+                    self.update_notifiers(&mut notifiers, event.get_application_id());
 
                     let response = match notifiers.get(event.get_application_id()) {
                         Some(&Notifier { apns: Some(ref apns), timestamp: _, updated_at: _ }) => Some(apns.send(&event)),
@@ -126,7 +126,7 @@ impl<'a> Consumer<'a> {
         Ok(())
     }
 
-    fn update_notifiers(&self, notifiers: &mut HashMap<String, Notifier>, application_id: &str, sandbox: &bool) {
+    fn update_notifiers(&self, notifiers: &mut HashMap<String, Notifier>, application_id: &str) {
         if notifiers.get(application_id).is_some() && self.is_expired(notifiers.get(application_id).unwrap()){
             let last_update = notifiers.get(application_id).unwrap().updated_at.clone();
 
@@ -139,7 +139,7 @@ impl<'a> Consumer<'a> {
             let create_notifier = move |cert: CertificateData| {
                 if cert.updated_at != last_update {
                     Ok(Notifier {
-                        apns: Some(Apns2Notifier::new(cert.certificate, cert.private_key, cert.apns_topic, sandbox)),
+                        apns: Some(Apns2Notifier::new(cert.certificate, cert.private_key, cert.apns_topic, &cert.is_sandbox)),
                         updated_at: cert.updated_at,
                         timestamp: precise_time_s(),
                     })
@@ -151,7 +151,7 @@ impl<'a> Consumer<'a> {
                             error!("Error when pinging apns, reconnecting: {}", e);
 
                             Ok(Notifier {
-                                apns: Some(Apns2Notifier::new(cert.certificate, cert.private_key, cert.apns_topic, sandbox)),
+                                apns: Some(Apns2Notifier::new(cert.certificate, cert.private_key, cert.apns_topic, &cert.is_sandbox)),
                                 updated_at: cert.updated_at,
                                 timestamp: precise_time_s(),
                             })
@@ -184,7 +184,7 @@ impl<'a> Consumer<'a> {
         } else if notifiers.get(application_id).is_none() {
             let create_notifier = move |cert: CertificateData| {
                 Ok(Notifier {
-                    apns: Some(Apns2Notifier::new(cert.certificate, cert.private_key, cert.apns_topic, sandbox)),
+                    apns: Some(Apns2Notifier::new(cert.certificate, cert.private_key, cert.apns_topic, &cert.is_sandbox)),
                     updated_at: cert.updated_at,
                     timestamp: precise_time_s(),
                 })
