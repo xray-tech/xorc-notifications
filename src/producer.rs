@@ -125,7 +125,7 @@ impl<'a> ResponseProducer<'a> {
                                     "retry"
                                 },
                                 _ => match apns_result.get_status() {
-                                    Timeout | Unknown | MissingChannel | Error => {
+                                    Timeout | Unknown | MissingChannel => {
                                         event.set_retry_after(retry_after);
                                         "retry"
                                     },
