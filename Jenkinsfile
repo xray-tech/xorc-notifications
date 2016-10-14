@@ -1,30 +1,45 @@
+def notify = fileLoader.fromGit('notify', 'git@bitbucket.org:360dialog-berlin/jenkins-scripts.git', 'master', 'git', '')
+
 node('master') {
   wrap([$class: 'AnsiColorBuildWrapper', 'colorMapName': 'XTerm']) {
-    stage 'Checkout'
-    checkout scm
+    try {
+      notify.slack('Build started')
 
-    stage 'Submodule update'
-    sh "git submodule update --init"
+      stage 'Checkout'
+      checkout scm
 
-    stage "Create the binary"
-    sh "cargo build --release"
+      stage 'Submodule update'
+      sh "git submodule update --init"
 
-    job_name = env.JOB_NAME.replaceFirst('.+/', '')
+      stage "Create the binary"
+      sh "cargo build --release"
 
-    if (job_name == "master") {
-      stage "Upload binary to repository"
-      sh "STAGE=production make upload"
+      job_name = env.JOB_NAME.replaceFirst('.+/', '')
 
-      stage "Deployment"
-      input "Ready to deploy?"
-      sh "STAGE=production make auto_update"
-    } else if (job_name == "develop") {
-      stage "Upload binary to repository"
-      sh "make upload"
+      if (job_name == "master") {
+        stage "Upload binary to repository"
+        sh "STAGE=production make upload"
 
-      stage "Deployment"
-      input "Ready to deploy?"
-      sh "make auto_update"
+        stage "Deployment"
+        notify.slack("Deployment pending, please confirm")
+        input "Ready to deploy?"
+        notify.slack("Deployment started")
+        sh "STAGE=production make auto_update"
+      } else if (job_name == "develop") {
+        stage "Upload binary to repository"
+        sh "make upload"
+
+        stage "Deployment"
+        notify.slack("Deployment pending, please confirm")
+        input "Ready to deploy?"
+        notify.slack("Deployment started")
+        sh "make auto_update"
+      }
+    } catch (error) {
+      currentBuild.result = 'FAILED'
+      throw error
+    } finally {
+      notify.slack(currentBuild.result)
     }
   }
 }
