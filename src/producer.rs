@@ -1,7 +1,9 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Duration;
+use chrono::Duration;
+use chrono::offset::utc::UTC;
 use std::thread;
+use std::cmp;
 use amqp::{Session, Channel, Table, Basic, Options};
 use amqp::protocol::basic::BasicProperties;
 use events::push_notification::PushNotification;
@@ -9,9 +11,10 @@ use events::google_notification::FcmResult;
 use events::google_notification::FcmResult_Status::*;
 use fcm::response::{FcmError, FcmResponse};
 use config::Config;
-use std::sync::mpsc::{channel, Receiver};
+use std::sync::mpsc::Receiver;
 use protobuf::core::Message;
 use metrics::Metrics;
+use retry_after::RetryAfter;
 
 pub type FcmData = (PushNotification, Option<Result<FcmResponse, FcmError>>);
 
@@ -66,7 +69,7 @@ impl<'a> ResponseProducer<'a> {
     }
 
     pub fn run(&mut self) {
-        let wait_duration = Duration::from_millis(100);
+        let wait_duration = Duration::milliseconds(100).to_std().unwrap();
 
         while self.control.load(Ordering::Relaxed) {
             match self.rx.try_recv() {
@@ -125,7 +128,7 @@ impl<'a> ResponseProducer<'a> {
 
                     self.channel.basic_publish(
                         &*self.config.rabbitmq.response_exchange,
-                        "google", // routing key
+                        "no_retry", // routing key
                         false,   // mandatory
                         false,   // immediate
                         BasicProperties { ..Default::default() },
@@ -138,20 +141,45 @@ impl<'a> ResponseProducer<'a> {
                     let mut fcm_result = FcmResult::new();
                     fcm_result.set_successful(false);
 
-                    match error {
-                        FcmError::ServerError(_)        => fcm_result.set_status(ServerError),
-                        FcmError::Unauthorized          => fcm_result.set_status(Unauthorized),
-                        FcmError::InvalidMessage(error) => {
+                    let routing_key = match error {
+                        FcmError::ServerError(retry_after) => {
+                            fcm_result.set_status(ServerError);
+
+                            let duration: u32 = match retry_after {
+                                Some(RetryAfter::Delay(duration)) =>
+                                    cmp::max(0 as i64, duration.num_seconds()) as u32,
+                                Some(RetryAfter::DateTime(retry_time)) => {
+                                    cmp::max(0 as i64, retry_time.timestamp() - UTC::now().timestamp()) as u32
+                                }
+                                None => {
+                                    if event.has_retry_count() {
+                                        let base: u32 = 2;
+                                        base.pow(event.get_retry_count())
+                                    } else {
+                                        1
+                                    }
+                                }
+                            };
+
+                            event.set_retry_after(duration);
+                            "retry"
+                        },
+                        FcmError::Unauthorized             => {
+                            fcm_result.set_status(Unauthorized);
+                            "no_retry"
+                        },
+                        FcmError::InvalidMessage(error)    => {
                             fcm_result.set_status(InvalidMessage);
                             fcm_result.set_error(error);
+                            "no_retry"
                         },
-                    }
+                    };
 
                     event.mut_google().set_response(fcm_result);
 
                     self.channel.basic_publish(
                         &*self.config.rabbitmq.response_exchange,
-                        "google", // routing key
+                        routing_key, // routing key
                         false,   // mandatory
                         false,   // immediate
                         BasicProperties { ..Default::default() },
@@ -170,7 +198,7 @@ impl<'a> ResponseProducer<'a> {
 
                     self.channel.basic_publish(
                         &*self.config.rabbitmq.response_exchange,
-                        "google", // routing key
+                        "no_retry", // routing key
                         false,   // mandatory
                         false,   // immediate
                         BasicProperties { ..Default::default() },

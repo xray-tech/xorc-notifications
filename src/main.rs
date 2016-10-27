@@ -17,6 +17,8 @@ extern crate time;
 extern crate postgres;
 extern crate r2d2;
 extern crate r2d2_postgres;
+extern crate retry_after;
+extern crate chrono;
 
 mod logger;
 mod config;
@@ -27,7 +29,6 @@ mod producer;
 mod metrics;
 mod certificate_registry;
 
-use log::*;
 use config::Config;
 use syslog::Facility;
 use logger::SyslogLogger;
