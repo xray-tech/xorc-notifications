@@ -1,5 +1,7 @@
+def build = fileLoader.fromGit('build', 'git@bitbucket.org:360dialog-berlin/jenkins-scripts.git', 'master', 'git', '')
+
 node('master') {
-  wrap([$class: 'AnsiColorBuildWrapper', 'colorMapName': 'XTerm']) {
+  build.start { ->
     stage 'Checkout'
     checkout scm
 
@@ -16,15 +18,13 @@ node('master') {
       sh "STAGE=production make upload"
 
       stage "Deployment"
-      input "Ready to deploy?"
-      sh "STAGE=production make auto_update"
+      build.deploy("STAGE=production make auto_update")
     } else if (job_name == "develop") {
       stage "Upload binary to repository"
       sh "make upload"
 
       stage "Deployment"
-      input "Ready to deploy?"
-      sh "make auto_update"
+      build.deploy("make auto_update")
     }
   }
 }

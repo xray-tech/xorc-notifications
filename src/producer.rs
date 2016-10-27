@@ -83,7 +83,7 @@ impl<'a> ResponseProducer<'a> {
 
                     self.metrics.timers.response_time.record(response_time);
 
-                    match response {
+                    let routing_key = match response {
                         Ok(result) => {
                             info!("Push notification result: '{:?}', event: '{:?}' ({} ms)",
                                 result, event, response_time / 1000000);
@@ -92,6 +92,7 @@ impl<'a> ResponseProducer<'a> {
                             apns_result.set_status(Self::convert_status(result.status));
 
                             self.metrics.counters.successful.increment(1);
+                            "no_retry"
                         },
                         Err(result) => {
                             error!("Error in sending push notification: '{:?}', event: '{:?}' ({} ms)",
@@ -102,21 +103,43 @@ impl<'a> ResponseProducer<'a> {
 
                             if let Some(reason) = Self::convert_reason(result.reason) {
                                 apns_result.set_reason(reason);
+
                             }
+
+                            let retry_after = if event.has_retry_count() {
+                                let base: u32 = 2;
+                                base.pow(event.get_retry_count())
+                            } else {
+                                1
+                            };
 
                             if let Some(ts) = result.timestamp {
                                 apns_result.set_timestamp(ts.to_timespec().sec);
                             }
 
                             self.metrics.counters.failure.increment(1);
+
+                            match apns_result.get_reason() {
+                                InternalServerError | Shutdown | ServiceUnavailable => {
+                                    event.set_retry_after(retry_after);
+                                    "retry"
+                                },
+                                _ => match apns_result.get_status() {
+                                    Timeout | Unknown | MissingChannel => {
+                                        event.set_retry_after(retry_after);
+                                        "retry"
+                                    },
+                                    _ => "no_retry",
+                                }
+                            }
                         }
-                    }
+                    };
 
                     event.mut_apple().set_result(apns_result);
 
                     self.channel.basic_publish(
                         &*self.config.rabbitmq.response_exchange,
-                        "apple", // routing key
+                        routing_key, // routing key
                         false,   // mandatory
                         false,   // immediate
                         BasicProperties { ..Default::default() },
@@ -125,7 +148,7 @@ impl<'a> ResponseProducer<'a> {
                     self.metrics.gauges.in_flight.decrement(1);
                 },
                 Ok((mut event, None)) => {
-                    let mut apns_result        = ApnsResult::new();
+                    let mut apns_result = ApnsResult::new();
 
                     apns_result.set_successful(false);
                     apns_result.set_status(Error);
@@ -135,7 +158,7 @@ impl<'a> ResponseProducer<'a> {
 
                     self.channel.basic_publish(
                         &*self.config.rabbitmq.response_exchange,
-                        "apple", // routing key
+                        "no_retry", // routing key
                         false,   // mandatory
                         false,   // immediate
                         BasicProperties { ..Default::default() },
