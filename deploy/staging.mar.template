@@ -11,7 +11,7 @@
     ["hostname", "GROUP_BY", "4"]
   ],
   "env": {
-    "RUST_LOG": "error",
+    "RUST_LOG": "info",
     "RUST_BACKTRACE": "1"
   },
   "cmd": "./apns2-$commit -n 4 -c /config-staging/current/dmp/apns2/staging.toml",
