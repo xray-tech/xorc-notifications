@@ -71,4 +71,8 @@ pub struct MetricsConfig {
 #[derive(RustcEncodable, RustcDecodable, Debug)]
 pub struct PostgresConfig {
     pub uri: String,
+    pub pool_size: u32,
+    pub min_idle: u32,
+    pub idle_timeout: u64,
+    pub max_lifetime: u64,
 }
