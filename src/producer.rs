@@ -15,30 +15,27 @@ use amqp::{Session, Channel, Table, Basic, Options};
 use amqp::protocol::basic::BasicProperties;
 use apns2::{AsyncResponse, APNSStatus, APNSError};
 use protobuf::core::Message;
-use metrics::Metrics;
+use metrics::{CALLBACKS_COUNTER, CALLBACKS_INFLIGHT, RESPONSE_TIMES_HISTOGRAM};
 
 pub type ApnsResponse = (PushNotification, Option<AsyncResponse>);
 
-pub struct ResponseProducer<'a> {
+pub struct ResponseProducer {
     config: Arc<Config>,
     session: Session,
     channel: Channel,
     rx: Receiver<(PushNotification, Option<AsyncResponse>)>,
     control: Arc<AtomicBool>,
-    metrics: Arc<Metrics<'a>>,
 }
 
-impl<'a> Drop for ResponseProducer<'a> {
+impl Drop for ResponseProducer {
     fn drop(&mut self) {
         let _ = self.channel.close(200, "Bye!");
         let _ = self.session.close(200, "Good bye!");
     }
 }
 
-impl<'a> ResponseProducer<'a> {
-    pub fn new(config: Arc<Config>, rx: Receiver<ApnsResponse>,
-               control: Arc<AtomicBool>, metrics: Arc<Metrics<'a>>) -> ResponseProducer<'a> {
-
+impl ResponseProducer {
+    pub fn new(config: Arc<Config>, rx: Receiver<ApnsResponse>, control: Arc<AtomicBool>) -> ResponseProducer {
         let options = Options {
             vhost: &config.rabbitmq.vhost,
             host: &config.rabbitmq.host,
@@ -66,7 +63,6 @@ impl<'a> ResponseProducer<'a> {
             channel: channel,
             rx: rx,
             control: control,
-            metrics: metrics,
         }
     }
 
@@ -81,7 +77,7 @@ impl<'a> ResponseProducer<'a> {
                     let response               = async_response.recv_timeout(response_timeout);
                     let response_time          = precise_time_ns() - async_response.requested_at;
 
-                    self.metrics.timers.response_time.record(response_time);
+                    RESPONSE_TIMES_HISTOGRAM.observe((response_time as f64) / 1000000000.0);
 
                     let routing_key = match response {
                         Ok(result) => {
@@ -91,7 +87,7 @@ impl<'a> ResponseProducer<'a> {
                             apns_result.set_successful(true);
                             apns_result.set_status(Self::convert_status(result.status));
 
-                            self.metrics.counters.successful.increment(1);
+                            CALLBACKS_COUNTER.with_label_values(&["successful"]).inc();
                             "no_retry"
                         },
                         Err(result) => {
@@ -117,7 +113,7 @@ impl<'a> ResponseProducer<'a> {
                                 apns_result.set_timestamp(ts.to_timespec().sec);
                             }
 
-                            self.metrics.counters.failure.increment(1);
+                            CALLBACKS_COUNTER.with_label_values(&["failed"]).inc();
 
                             match apns_result.get_reason() {
                                 InternalServerError | Shutdown | ServiceUnavailable => {
@@ -145,7 +141,7 @@ impl<'a> ResponseProducer<'a> {
                         BasicProperties { ..Default::default() },
                         event.write_to_bytes().unwrap()).unwrap();
 
-                    self.metrics.gauges.in_flight.decrement(1);
+                    CALLBACKS_INFLIGHT.dec();
                 },
                 Ok((mut event, None)) => {
                     let mut apns_result = ApnsResult::new();
@@ -164,8 +160,8 @@ impl<'a> ResponseProducer<'a> {
                         BasicProperties { ..Default::default() },
                         event.write_to_bytes().unwrap()).unwrap();
 
-                    self.metrics.gauges.in_flight.decrement(1);
-                    self.metrics.counters.certificate_missing.increment(1);
+                    CALLBACKS_INFLIGHT.dec();
+                    CALLBACKS_COUNTER.with_label_values(&["certificate_missing"]).inc();
                 },
                 Err(_) => {
                     thread::park_timeout(wait_duration);
@@ -175,7 +171,7 @@ impl<'a> ResponseProducer<'a> {
     }
 
     fn is_running(&self) -> bool {
-        self.control.load(Ordering::Relaxed) || self.metrics.gauges.in_flight.collect() > 0
+        self.control.load(Ordering::Relaxed)
     }
 
     fn convert_status(status: APNSStatus) -> ApnsResult_Status {

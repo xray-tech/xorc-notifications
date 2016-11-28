@@ -4,6 +4,12 @@ extern crate env_logger;
 extern crate syslog;
 extern crate hyper;
 
+#[macro_use]
+extern crate prometheus;
+
+#[macro_use]
+extern crate lazy_static;
+
 extern crate postgres;
 extern crate r2d2;
 extern crate r2d2_postgres;
@@ -13,8 +19,6 @@ extern crate chan_signal;
 extern crate argparse;
 extern crate protobuf;
 extern crate toml;
-extern crate influent;
-extern crate histogram;
 extern crate rustc_serialize;
 extern crate time;
 
@@ -29,6 +33,7 @@ mod producer;
 
 use syslog::Facility;
 use logger::SyslogLogger;
+use metrics::StatisticsServer;
 use std::sync::{Arc};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
@@ -38,8 +43,6 @@ use std::thread::JoinHandle;
 use chan_signal::{Signal, notify};
 use argparse::{ArgumentParser, Store};
 use consumer::Consumer;
-use metrics::sender::MetricsSender;
-use metrics::Metrics;
 use config::Config;
 use certificate_registry::CertificateRegistry;
 use producer::{ResponseProducer, ApnsResponse};
@@ -71,7 +74,6 @@ fn main() {
     let mut config_file_location = String::from("./config/config.toml");
 
     let control = Arc::new(AtomicBool::new(true));
-    let metrics = Metrics::new();
 
     {
         let mut ap = ArgumentParser::new();
@@ -90,8 +92,7 @@ fn main() {
     let (tx_response, rx_response): (Sender<ApnsResponse>, Receiver<ApnsResponse>) = mpsc::channel();
 
     let mut threads : Vec<JoinHandle<_>> = (0..number_of_threads).map(|i| {
-        let consumer = Consumer::new(control.clone(), metrics.clone(),
-            config.clone(), certificate_registry.clone(), tx_response.clone());
+        let consumer = Consumer::new(control.clone(), config.clone(), certificate_registry.clone(), tx_response.clone());
 
         thread::spawn(move || {
             info!("Starting consumer #{}", i);
@@ -105,22 +106,7 @@ fn main() {
     }).collect();
 
     threads.push({
-        let metrics_sender = MetricsSender {
-            metrics: metrics.clone(),
-            control: control.clone(),
-            config: config.clone(),
-        };
-
-        thread::spawn(move || {
-            info!("Starting metrics thread...");
-            metrics_sender.run();
-            info!("Exiting metrics thread...");
-        })
-    });
-
-    threads.push({
-        let mut producer = ResponseProducer::new(config.clone(), rx_response,
-            control.clone(), metrics.clone());
+        let mut producer = ResponseProducer::new(config.clone(), rx_response, control.clone());
 
         thread::spawn(move || {
             info!("Starting response producer thread...");
@@ -129,6 +115,8 @@ fn main() {
         })
     });
 
+    debug!("Starting statistics server...");
+    let mut listening = StatisticsServer::handle();
 
     if let Some(_) = exit_signal.recv() {
         info!("Quitting the Apple Push Notification service");
@@ -138,5 +126,7 @@ fn main() {
             thread.thread().unpark();
             thread.join().unwrap();
         }
+
+        listening.close().unwrap();
     }
 }
