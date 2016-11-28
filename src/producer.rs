@@ -13,30 +13,28 @@ use fcm::response::{FcmError, FcmResponse};
 use config::Config;
 use std::sync::mpsc::Receiver;
 use protobuf::core::Message;
-use metrics::Metrics;
 use retry_after::RetryAfter;
+use metrics::CALLBACKS_COUNTER;
 
 pub type FcmData = (PushNotification, Option<Result<FcmResponse, FcmError>>);
 
-pub struct ResponseProducer<'a> {
+pub struct ResponseProducer {
     channel: Channel,
     session: Session,
     control: Arc<AtomicBool>,
     config: Arc<Config>,
     rx: Receiver<FcmData>,
-    metrics: Arc<Metrics<'a>>,
 }
 
-impl<'a> Drop for ResponseProducer<'a> {
+impl Drop for ResponseProducer {
     fn drop(&mut self) {
         let _ = self.channel.close(200, "Bye!");
         let _ = self.session.close(200, "Good bye!");
     }
 }
 
-impl<'a> ResponseProducer<'a> {
-    pub fn new(config: Arc<Config>, rx: Receiver<FcmData>, control: Arc<AtomicBool>,
-               metrics: Arc<Metrics<'a>>) -> ResponseProducer<'a> {
+impl ResponseProducer {
+    pub fn new(config: Arc<Config>, rx: Receiver<FcmData>, control: Arc<AtomicBool>) -> ResponseProducer {
         let options = Options {
             vhost: &config.rabbitmq.vhost,
             host: &config.rabbitmq.host,
@@ -64,7 +62,6 @@ impl<'a> ResponseProducer<'a> {
             control: control,
             config: config.clone(),
             rx: rx,
-            metrics: metrics,
         }
     }
 
@@ -97,13 +94,13 @@ impl<'a> ResponseProducer<'a> {
                     if result.error.is_none() {
                         info!("Push notification result: '{:?}', event: '{:?}'", result, event);
 
-                        self.metrics.counters.successful.increment(1);
+                        CALLBACKS_COUNTER.with_label_values(&["successful"]).inc();
                         fcm_result.set_successful(true);
                         fcm_result.set_status(Success);
                     } else {
                         error!("Error in sending push notification: '{:?}', event: '{:?}'", result, event);
 
-                        self.metrics.counters.failure.increment(1);
+                        CALLBACKS_COUNTER.with_label_values(&["failure"]).inc();
                         fcm_result.set_successful(false);
 
                         let ref status = match result.error.as_ref().map(AsRef::as_ref) {
@@ -137,7 +134,7 @@ impl<'a> ResponseProducer<'a> {
                 Ok((mut event, Some(Err(error)))) => {
                     error!("Error in sending push notification: '{:?}', event: '{:?}'", &error, event);
 
-                    self.metrics.counters.failure.increment(1);
+                    CALLBACKS_COUNTER.with_label_values(&["failure"]).inc();
                     let mut fcm_result = FcmResult::new();
                     fcm_result.set_successful(false);
 
@@ -187,7 +184,7 @@ impl<'a> ResponseProducer<'a> {
                 },
                 Ok((mut event, None)) => {
                     error!("Certificate missing for event: '{:?}'", event);
-                    self.metrics.counters.certificate_missing.increment(1);
+                    CALLBACKS_COUNTER.with_label_values(&["certificate_missing"]).inc();
 
                     let mut fcm_result = FcmResult::new();
 
