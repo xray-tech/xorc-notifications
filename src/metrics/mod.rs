@@ -1,28 +1,50 @@
-pub mod sender;
-pub mod instruments;
+use prometheus::{CounterVec, Histogram, Gauge, TextEncoder, Encoder, self};
+use std::env;
 
-#[macro_use]
-mod macros;
+use hyper::header::ContentType;
+use hyper::server::{Server, Request, Response, Listening};
+use hyper::mime::Mime;
 
-use std::sync::Arc;
-use metrics::instruments::{Gauge, Counter, Timer};
+lazy_static! {
+    pub static ref CALLBACKS_COUNTER: CounterVec = register_counter_vec!(
+        "push_notifications_total",
+        "Total number of push notifications made.",
+        &["status"]
+    ).unwrap();
 
-register_counters!(successful, failure, certificate_missing);
-register_timers!(response_time);
-register_gauges!(in_flight);
+    pub static ref CALLBACKS_INFLIGHT: Gauge = register_gauge!(
+        "push_notifications_in_flight",
+        "Number of push notifications in flight"
+    ).unwrap();
 
-pub struct Metrics<'a> {
-    pub counters: Counters<'a>,
-    pub timers: Timers<'a>,
-    pub gauges: Gauges<'a>,
+    pub static ref RESPONSE_TIMES_HISTOGRAM: Histogram = register_histogram!(
+        "http_request_latency_seconds",
+        "The HTTP request latencies in seconds"
+    ).unwrap();
 }
 
-impl<'a> Metrics<'a> {
-    pub fn new() -> Arc<Metrics<'a>> {
-        Arc::new(Metrics {
-            gauges: Gauges::new(),
-            counters: Counters::new(),
-            timers: Timers::new(),
-        })
+pub trait StatisticsServer {}
+
+impl StatisticsServer {
+    pub fn handle() -> Listening {
+        let port = match env::var("PORT") {
+            Ok(val) => val,
+            Err(_) => String::from("8081"),
+        };
+
+        let addr = format!("0.0.0.0:{}", port);
+
+        let server = Server::http(&*addr).unwrap();
+        let encoder = TextEncoder::new();
+
+        server.handle(move |_: Request, mut res: Response| {
+            let metric_families = prometheus::gather();
+            let mut buffer = vec![];
+            let content_type = ContentType(encoder.format_type().parse::<Mime>().unwrap());
+
+            encoder.encode(&metric_families, &mut buffer).unwrap();
+            res.headers_mut().set(content_type);
+            res.send(&buffer).unwrap();
+        }).unwrap()
     }
 }

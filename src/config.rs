@@ -7,7 +7,6 @@ use toml;
 pub struct Config {
     pub postgres: PostgresConfig,
     pub rabbitmq: RabbitMqConfig,
-    pub metrics: MetricsConfig,
 }
 
 impl Config {
@@ -59,16 +58,10 @@ pub struct RabbitMqConfig {
 }
 
 #[derive(RustcEncodable, RustcDecodable, Debug)]
-pub struct MetricsConfig {
-    pub uri: String,
-    pub database: String,
-    pub tick_duration: u64,
-    pub login: String,
-    pub password: String,
-    pub application: String,
-}
-
-#[derive(RustcEncodable, RustcDecodable, Debug)]
 pub struct PostgresConfig {
     pub uri: String,
+    pub pool_size: u32,
+    pub min_idle: u32,
+    pub idle_timeout: u64,
+    pub max_lifetime: u64,
 }
