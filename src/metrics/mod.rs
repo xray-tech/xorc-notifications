@@ -18,7 +18,7 @@ lazy_static! {
     ).unwrap();
 
     pub static ref RESPONSE_TIMES_HISTOGRAM: Histogram = register_histogram!(
-        "http_request_duration_seconds",
+        "http_request_latency_seconds",
         "The HTTP request latencies in seconds"
     ).unwrap();
 }
