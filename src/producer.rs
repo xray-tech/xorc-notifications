@@ -85,21 +85,24 @@ impl ResponseProducer {
                                 result, event, response_time / 1000000);
 
                             apns_result.set_successful(true);
-                            apns_result.set_status(Self::convert_status(result.status));
+                            apns_result.set_status(Self::convert_status(&result.status));
 
-                            CALLBACKS_COUNTER.with_label_values(&["successful"]).inc();
+                            match Self::convert_reason_to_string(&result.reason) {
+                                Some(reason) => CALLBACKS_COUNTER.with_label_values(&[&reason]).inc(),
+                                None => CALLBACKS_COUNTER.with_label_values(&[&Self::convert_status_to_string(&result.status)]).inc(),
+                            }
+
                             "no_retry"
                         },
                         Err(result) => {
                             error!("Error in sending push notification: '{:?}', event: '{:?}' ({} ms)",
                                 result, event, response_time / 1000000);
 
-                            apns_result.set_status(Self::convert_status(result.status));
+                            apns_result.set_status(Self::convert_status(&result.status));
                             apns_result.set_successful(false);
 
-                            if let Some(reason) = Self::convert_reason(result.reason) {
+                            if let Some(reason) = Self::convert_reason(&result.reason) {
                                 apns_result.set_reason(reason);
-
                             }
 
                             let retry_after = if event.has_retry_count() {
@@ -113,7 +116,10 @@ impl ResponseProducer {
                                 apns_result.set_timestamp(ts.to_timespec().sec);
                             }
 
-                            CALLBACKS_COUNTER.with_label_values(&["failed"]).inc();
+                            match Self::convert_reason_to_string(&result.reason) {
+                                Some(reason) => CALLBACKS_COUNTER.with_label_values(&[&reason]).inc(),
+                                None => CALLBACKS_COUNTER.with_label_values(&[&Self::convert_status_to_string(&result.status)]).inc(),
+                            }
 
                             match apns_result.get_reason() {
                                 InternalServerError | Shutdown | ServiceUnavailable => {
@@ -174,8 +180,8 @@ impl ResponseProducer {
         self.control.load(Ordering::Relaxed) || CALLBACKS_INFLIGHT.get() > 0.0
     }
 
-    fn convert_status(status: APNSStatus) -> ApnsResult_Status {
-        match status {
+    fn convert_status(status: &APNSStatus) -> ApnsResult_Status {
+        match *status {
             APNSStatus::Success        => Success,
             APNSStatus::BadRequest     => BadRequest,
             APNSStatus::MissingChannel => MissingChannel,
@@ -185,8 +191,48 @@ impl ResponseProducer {
         }
     }
 
-    fn convert_reason(reason: Option<APNSError>) -> Option<ApnsResult_Reason> {
-        match reason {
+    fn convert_status_to_string(status: &APNSStatus) -> String {
+        match *status {
+            APNSStatus::Success        => String::from("success"),
+            APNSStatus::BadRequest     => String::from("bad_request"),
+            APNSStatus::MissingChannel => String::from("missing_channel"),
+            APNSStatus::Timeout        => String::from("timeout"),
+            APNSStatus::Unknown        => String::from("unknown"),
+            _                          => String::from("error"),
+        }
+    }
+
+    fn convert_reason_to_string(reason: &Option<APNSError>) -> Option<String> {
+        match *reason {
+            Some(APNSError::PayloadEmpty)              => Some(String::from("payload_empty")),
+            Some(APNSError::PayloadTooLarge)           => Some(String::from("payload_too_large")),
+            Some(APNSError::BadTopic)                  => Some(String::from("bad_topic")),
+            Some(APNSError::TopicDisallowed)           => Some(String::from("topic_disallowed")),
+            Some(APNSError::BadMessageId)              => Some(String::from("bad_message_id")),
+            Some(APNSError::BadExpirationDate)         => Some(String::from("bad_expiration_date")),
+            Some(APNSError::BadPriority)               => Some(String::from("bad_priority")),
+            Some(APNSError::MissingDeviceToken)        => Some(String::from("missing_device_token")),
+            Some(APNSError::BadDeviceToken)            => Some(String::from("bad_device_token")),
+            Some(APNSError::DeviceTokenNotForTopic)    => Some(String::from("device_token_not_for_topic")),
+            Some(APNSError::Unregistered)              => Some(String::from("unregistered")),
+            Some(APNSError::DuplicateHeaders)          => Some(String::from("duplicate_headers")),
+            Some(APNSError::BadCertificateEnvironment) => Some(String::from("bad_certificate_environment")),
+            Some(APNSError::BadCertificate)            => Some(String::from("bad_certificate")),
+            Some(APNSError::Forbidden)                 => Some(String::from("forbidden")),
+            Some(APNSError::BadPath)                   => Some(String::from("bad_path")),
+            Some(APNSError::MethodNotAllowed)          => Some(String::from("method_not_allowed")),
+            Some(APNSError::TooManyRequests)           => Some(String::from("too_many_requests")),
+            Some(APNSError::IdleTimeout)               => Some(String::from("idle_timeout")),
+            Some(APNSError::Shutdown)                  => Some(String::from("shutdown")),
+            Some(APNSError::InternalServerError)       => Some(String::from("internal_server_error")),
+            Some(APNSError::ServiceUnavailable)        => Some(String::from("service_unavailable")),
+            Some(APNSError::MissingTopic)              => Some(String::from("missing_topic")),
+            _                                          => None,
+        }
+    }
+
+    fn convert_reason(reason: &Option<APNSError>) -> Option<ApnsResult_Reason> {
+        match *reason {
             Some(APNSError::PayloadEmpty)              => Some(PayloadEmpty),
             Some(APNSError::PayloadTooLarge)           => Some(PayloadTooLarge),
             Some(APNSError::BadTopic)                  => Some(BadTopic),
