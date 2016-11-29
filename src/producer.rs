@@ -94,31 +94,32 @@ impl ResponseProducer {
                     if result.error.is_none() {
                         info!("Push notification result: '{:?}', event: '{:?}'", result, event);
 
-                        CALLBACKS_COUNTER.with_label_values(&["successful"]).inc();
+                        CALLBACKS_COUNTER.with_label_values(&["success"]).inc();
                         fcm_result.set_successful(true);
                         fcm_result.set_status(Success);
                     } else {
                         error!("Error in sending push notification: '{:?}', event: '{:?}'", result, event);
 
-                        CALLBACKS_COUNTER.with_label_values(&["failure"]).inc();
                         fcm_result.set_successful(false);
 
-                        let ref status = match result.error.as_ref().map(AsRef::as_ref) {
-                            Some("InvalidTtl")                => InvalidTtl,
-                            Some("Unavailable")               => Unavailable,
-                            Some("MessageTooBig")             => MessageTooBig,
-                            Some("NotRegistered")             => NotRegistered,
-                            Some("InvalidDataKey")            => InvalidDataKey,
-                            Some("MismatchSenderId")          => MismatchSenderId,
-                            Some("InvalidPackageName")        => InvalidPackageName,
-                            Some("MissingRegistration")       => MissingRegistration,
-                            Some("InvalidRegistration")       => InvalidRegistration,
-                            Some("DeviceMessageRateExceeded") => DeviceMessageRateExceeded,
-                            Some("TopicsMessageRateExceeded") => TopicsMessageRateExceeded,
-                            _                                 => Unknown,
+                        let (status, status_str) = match result.error.as_ref().map(AsRef::as_ref) {
+                            Some("InvalidTtl")                => (InvalidTtl, "invalid_ttl"),
+                            Some("Unavailable")               => (Unavailable, "unavailable"),
+                            Some("MessageTooBig")             => (MessageTooBig, "message_too_big"),
+                            Some("NotRegistered")             => (NotRegistered, "not_registered"),
+                            Some("InvalidDataKey")            => (InvalidDataKey, "invalid_data_key"),
+                            Some("MismatchSenderId")          => (MismatchSenderId, "mismatch_sender_id"),
+                            Some("InvalidPackageName")        => (InvalidPackageName, "invalid_package_name"),
+                            Some("MissingRegistration")       => (MissingRegistration, "missing_registration"),
+                            Some("InvalidRegistration")       => (InvalidRegistration, "invalid_registration"),
+                            Some("DeviceMessageRateExceeded") => (DeviceMessageRateExceeded, "device_message_rate_exceeded"),
+                            Some("TopicsMessageRateExceeded") => (TopicsMessageRateExceeded, "topics_message_rate_exceeded"),
+                            _                                 => (Unknown, "unknown_error"),
                         };
 
-                        fcm_result.set_status(*status);
+                        CALLBACKS_COUNTER.with_label_values(&[status_str]).inc();
+
+                        fcm_result.set_status(status);
                     }
 
                     event.mut_google().set_response(fcm_result);
@@ -134,7 +135,6 @@ impl ResponseProducer {
                 Ok((mut event, Some(Err(error)))) => {
                     error!("Error in sending push notification: '{:?}', event: '{:?}'", &error, event);
 
-                    CALLBACKS_COUNTER.with_label_values(&["failure"]).inc();
                     let mut fcm_result = FcmResult::new();
                     fcm_result.set_successful(false);
 
@@ -158,15 +158,19 @@ impl ResponseProducer {
                                 }
                             };
 
+                            CALLBACKS_COUNTER.with_label_values(&["server_error"]).inc();
+
                             event.set_retry_after(duration);
                             "retry"
                         },
                         FcmError::Unauthorized             => {
                             fcm_result.set_status(Unauthorized);
+                            CALLBACKS_COUNTER.with_label_values(&["unauthorized"]).inc();
                             "no_retry"
                         },
                         FcmError::InvalidMessage(error)    => {
                             fcm_result.set_status(InvalidMessage);
+                            CALLBACKS_COUNTER.with_label_values(&["invalid_message"]).inc();
                             fcm_result.set_error(error);
                             "no_retry"
                         },
