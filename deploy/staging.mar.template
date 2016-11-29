@@ -5,6 +5,7 @@
   "mem": 20,
   "labels": {
     "collectd_app": "fcm-staging",
+    "overrideTaskName": "fcm",
     "commit_id": "$commit"
   },
   "constraints": [
