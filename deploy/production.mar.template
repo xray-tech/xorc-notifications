@@ -5,6 +5,7 @@
   "mem": 512,
   "labels": {
     "collectd_app": "apns2-production",
+    "overrideTaskName": "apns2",
     "commit_id": "$commit"
   },
   "constraints": [
