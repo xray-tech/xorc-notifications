@@ -5,7 +5,7 @@
   "mem": 20,
   "labels": {
     "collectd_app": "apns2-staging",
-    "overrideTaskName": "apns2",
+    "overrideTaskName": "apns2-staging",
     "commit_id": "$commit"
   },
   "constraints": [
