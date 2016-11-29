@@ -5,6 +5,7 @@
   "mem": 512,
   "labels": {
     "collectd_app": "apns2-production",
+    "overrideTaskName": "apns2",
     "commit_id": "$commit"
   },
   "constraints": [
@@ -14,6 +15,17 @@
     "RUST_LOG": "info",
     "RUST_BACKTRACE": "1"
   },
+  "healthChecks": [
+    {
+      "protocol": "HTTP",
+      "path": "/",
+      "gracePeriodSeconds": 30,
+      "intervalSeconds": 5,
+      "portIndex": 0,
+      "timeoutSeconds": 2,
+      "maxConsecutiveFailures": 2
+    }
+  ],
   "cmd": "./apns2-$commit -n 4 -c /config/current/dmp/apns2/production.toml",
   "fetch": [
     {
