@@ -1,24 +1,20 @@
 [postgres]
 uri = "postgres://root:kulli@localhost:5432/crm"
 cache_ttl = 10
+pool_size = 10
+min_idle = 2
+idle_timeout = 90000
+max_lifetime = 1800000
 
 [rabbitmq]
 queue = "ha.apn.queue"
 exchange = "ha.push-notifications"
 exchange_type = "topic"
-response_exchange = "push-notification-responses"
-response_exchange_type = "topic"
+response_exchange = "ha.push-notification-responses.fanout"
+response_exchange_type = "fanout"
 routing_key = "google"
 vhost = "/"
 host = "localhost"
 port = 5672
 login = "guest"
 password = "guest"
-
-[metrics]
-uri = "http://localhost:8086"
-database = "test"
-tick_duration = 10
-login = ""
-password = ""
-application = "fcm"
