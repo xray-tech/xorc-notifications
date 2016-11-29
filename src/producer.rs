@@ -171,7 +171,7 @@ impl ResponseProducer {
     }
 
     fn is_running(&self) -> bool {
-        self.control.load(Ordering::Relaxed)
+        self.control.load(Ordering::Relaxed) || CALLBACKS_INFLIGHT.get() > 0.0
     }
 
     fn convert_status(status: APNSStatus) -> ApnsResult_Status {
