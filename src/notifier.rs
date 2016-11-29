@@ -2,19 +2,16 @@ use fcm::*;
 use events::push_notification::PushNotification;
 use events::google_notification::GoogleNotification_Priority;
 use std::collections::HashMap;
-use metrics::Metrics;
-use std::sync::Arc;
+use metrics::RESPONSE_TIMES_HISTOGRAM;
 
-pub struct Notifier<'a> {
+pub struct Notifier {
     fcm_client: Client,
-    metrics: Arc<Metrics<'a>>,
 }
 
-impl<'a> Notifier<'a> {
-    pub fn new(metrics: Arc<Metrics<'a>>) -> Notifier<'a> {
+impl Notifier {
+    pub fn new() -> Notifier {
         Notifier {
             fcm_client: Client::new(),
-            metrics: metrics,
         }
     }
 
@@ -103,8 +100,10 @@ impl<'a> Notifier<'a> {
             message.dry_run(notification.get_dry_run());
         }
 
-        self.metrics.timers.response_time.time(|| {
-            self.fcm_client.send(message.finalize(), api_key)
-        })
+        let timer = RESPONSE_TIMES_HISTOGRAM.start_timer();
+        let response = self.fcm_client.send(message.finalize(), api_key);
+
+        timer.observe_duration();
+        response
     }
 }

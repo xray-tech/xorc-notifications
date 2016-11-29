@@ -10,8 +10,6 @@ extern crate chan_signal;
 extern crate argparse;
 extern crate protobuf;
 extern crate toml;
-extern crate influent;
-extern crate histogram;
 extern crate rustc_serialize;
 extern crate time;
 extern crate postgres;
@@ -19,6 +17,12 @@ extern crate r2d2;
 extern crate r2d2_postgres;
 extern crate retry_after;
 extern crate chrono;
+
+#[macro_use]
+extern crate prometheus;
+
+#[macro_use]
+extern crate lazy_static;
 
 mod logger;
 mod config;
@@ -42,8 +46,7 @@ use notifier::Notifier;
 use producer::{FcmData, ResponseProducer};
 use std::sync::mpsc;
 use std::sync::mpsc::{Sender, Receiver};
-use metrics::sender::MetricsSender;
-use metrics::Metrics;
+use metrics::StatisticsServer;
 use certificate_registry::CertificateRegistry;
 
 fn setup_logger() {
@@ -83,7 +86,6 @@ fn main() {
         ap.parse_args_or_exit();
     }
 
-    let metrics              = Metrics::new();
     let config               = Arc::new(Config::parse(config_file_location));
     let certificate_registry = Arc::new(CertificateRegistry::new(config.clone()));
     let control              = Arc::new(AtomicBool::new(true));
@@ -91,7 +93,7 @@ fn main() {
     let (tx, rx): (Sender<FcmData>, Receiver<FcmData>) = mpsc::channel();
 
     let mut threads : Vec<JoinHandle<_>> = (0..number_of_threads).map(|i| {
-        let notifier     = Notifier::new(metrics.clone());
+        let notifier     = Notifier::new();
         let consumer = Consumer::new(control.clone(), config.clone(), notifier,
             tx.clone(), certificate_registry.clone());
 
@@ -107,7 +109,7 @@ fn main() {
     }).collect();
 
     threads.push({
-        let mut producer = ResponseProducer::new(config.clone(), rx, control.clone(), metrics.clone());
+        let mut producer = ResponseProducer::new(config.clone(), rx, control.clone());
 
         thread::spawn(move || {
             info!("Starting response producer thread...");
@@ -116,19 +118,8 @@ fn main() {
         })
     });
 
-    threads.push({
-        let metrics_sender = MetricsSender {
-            metrics: metrics.clone(),
-            control: control.clone(),
-            config: config.clone(),
-        };
-
-        thread::spawn(move || {
-            info!("Starting metrics thread...");
-            metrics_sender.run();
-            info!("Exiting metrics thread...");
-        })
-    });
+    debug!("Starting statistics server...");
+    let mut listening = StatisticsServer::handle();
 
     if let Some(_) = exit_signal.recv() {
         info!("Quitting the Google Firebase Push Notification service");
@@ -139,5 +130,7 @@ fn main() {
             thread.thread().unpark();
             thread.join().unwrap();
         }
+
+        listening.close().unwrap();
     }
 }

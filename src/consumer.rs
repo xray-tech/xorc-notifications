@@ -14,10 +14,10 @@ use producer::FcmData;
 use certificate_registry::{CertificateRegistry, CertificateError};
 use time::precise_time_s;
 
-pub struct Consumer<'a> {
+pub struct Consumer {
     channel: Mutex<Channel>,
     session: Session,
-    notifier: Notifier<'a>,
+    notifier: Notifier,
     control: Arc<AtomicBool>,
     config: Arc<Config>,
     tx: Sender<FcmData>,
@@ -30,7 +30,7 @@ struct ApiKey {
     pub timestamp: f64,
 }
 
-impl<'a> Drop for Consumer<'a> {
+impl Drop for Consumer {
     fn drop(&mut self) {
         let mut channel = self.channel.lock().unwrap();
 
@@ -39,8 +39,8 @@ impl<'a> Drop for Consumer<'a> {
     }
 }
 
-impl<'a> Consumer<'a> {
-    pub fn new(control: Arc<AtomicBool>, config: Arc<Config>, notifier: Notifier<'a>,
+impl Consumer {
+    pub fn new(control: Arc<AtomicBool>, config: Arc<Config>, notifier: Notifier,
                tx: Sender<FcmData>, registry: Arc<CertificateRegistry>) -> Consumer {
         let mut session = Session::new(Options {
             vhost: &config.rabbitmq.vhost,

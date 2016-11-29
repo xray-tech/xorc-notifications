@@ -5,6 +5,7 @@
   "mem": 20,
   "labels": {
     "collectd_app": "fcm-staging",
+    "overrideTaskName": "fcm",
     "commit_id": "$commit"
   },
   "constraints": [
@@ -14,6 +15,17 @@
     "RUST_LOG": "info",
     "RUST_BACKTRACE": "1"
   },
+  "healthChecks": [
+    {
+      "protocol": "HTTP",
+      "path": "/",
+      "gracePeriodSeconds": 30,
+      "intervalSeconds": 5,
+      "portIndex": 0,
+      "timeoutSeconds": 2,
+      "maxConsecutiveFailures": 2
+    }
+  ],
   "cmd": "./fcm-$commit -n 10 -c /config-staging/current/dmp/fcm/staging.toml",
   "fetch": [
     {
