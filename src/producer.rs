@@ -72,8 +72,6 @@ impl ResponseProducer {
             match self.rx.try_recv() {
                 Ok((mut event, Some(Ok(response)))) => {
                     let mut fcm_result = FcmResult::new();
-                    let ref results = response.results.unwrap();
-                    let ref result = results.first().unwrap();
 
                     if let Some(multicast_id) = response.multicast_id {
                         fcm_result.set_multicast_id(multicast_id);
@@ -83,43 +81,59 @@ impl ResponseProducer {
                         fcm_result.set_canonical_ids(canonical_ids);
                     }
 
-                    if let Some(ref message_id) = result.message_id {
-                        fcm_result.set_message_id(message_id.clone());
-                    }
+                    match response.results {
+                        Some(results) => match results.first() {
+                            Some(result) => {
+                                if let Some(ref message_id) = result.message_id {
+                                    fcm_result.set_message_id(message_id.clone());
+                                }
 
-                    if let Some(ref registration_id) = result.registration_id {
-                        fcm_result.set_registration_id(registration_id.clone());
-                    }
+                                if let Some(ref registration_id) = result.registration_id {
+                                    fcm_result.set_registration_id(registration_id.clone());
+                                }
 
-                    if result.error.is_none() {
-                        info!("Push notification result: '{:?}', event: '{:?}'", result, event);
+                                if result.error.is_none() {
+                                    info!("Push notification result: '{:?}', event: '{:?}'", result, event);
 
-                        CALLBACKS_COUNTER.with_label_values(&["success"]).inc();
-                        fcm_result.set_successful(true);
-                        fcm_result.set_status(Success);
-                    } else {
-                        error!("Error in sending push notification: '{:?}', event: '{:?}'", result, event);
+                                    CALLBACKS_COUNTER.with_label_values(&["success"]).inc();
+                                    fcm_result.set_successful(true);
+                                    fcm_result.set_status(Success);
+                                } else {
+                                    error!("Error in sending push notification: '{:?}', event: '{:?}'", result, event);
 
-                        fcm_result.set_successful(false);
+                                    fcm_result.set_successful(false);
 
-                        let (status, status_str) = match result.error.as_ref().map(AsRef::as_ref) {
-                            Some("InvalidTtl")                => (InvalidTtl, "invalid_ttl"),
-                            Some("Unavailable")               => (Unavailable, "unavailable"),
-                            Some("MessageTooBig")             => (MessageTooBig, "message_too_big"),
-                            Some("NotRegistered")             => (NotRegistered, "not_registered"),
-                            Some("InvalidDataKey")            => (InvalidDataKey, "invalid_data_key"),
-                            Some("MismatchSenderId")          => (MismatchSenderId, "mismatch_sender_id"),
-                            Some("InvalidPackageName")        => (InvalidPackageName, "invalid_package_name"),
-                            Some("MissingRegistration")       => (MissingRegistration, "missing_registration"),
-                            Some("InvalidRegistration")       => (InvalidRegistration, "invalid_registration"),
-                            Some("DeviceMessageRateExceeded") => (DeviceMessageRateExceeded, "device_message_rate_exceeded"),
-                            Some("TopicsMessageRateExceeded") => (TopicsMessageRateExceeded, "topics_message_rate_exceeded"),
-                            _                                 => (Unknown, "unknown_error"),
-                        };
+                                    let (status, status_str) = match result.error.as_ref().map(AsRef::as_ref) {
+                                        Some("InvalidTtl")                => (InvalidTtl, "invalid_ttl"),
+                                        Some("Unavailable")               => (Unavailable, "unavailable"),
+                                        Some("MessageTooBig")             => (MessageTooBig, "message_too_big"),
+                                        Some("NotRegistered")             => (NotRegistered, "not_registered"),
+                                        Some("InvalidDataKey")            => (InvalidDataKey, "invalid_data_key"),
+                                        Some("MismatchSenderId")          => (MismatchSenderId, "mismatch_sender_id"),
+                                        Some("InvalidPackageName")        => (InvalidPackageName, "invalid_package_name"),
+                                        Some("MissingRegistration")       => (MissingRegistration, "missing_registration"),
+                                        Some("InvalidRegistration")       => (InvalidRegistration, "invalid_registration"),
+                                        Some("DeviceMessageRateExceeded") => (DeviceMessageRateExceeded, "device_message_rate_exceeded"),
+                                        Some("TopicsMessageRateExceeded") => (TopicsMessageRateExceeded, "topics_message_rate_exceeded"),
+                                        _                                 => (Unknown, "unknown_error"),
+                                    };
 
-                        CALLBACKS_COUNTER.with_label_values(&[status_str]).inc();
+                                    CALLBACKS_COUNTER.with_label_values(&[status_str]).inc();
 
-                        fcm_result.set_status(status);
+                                    fcm_result.set_status(status);
+                                }
+                            },
+                            None => {
+                                CALLBACKS_COUNTER.with_label_values(&["unknown_error"]).inc();
+                                fcm_result.set_successful(false);
+                                fcm_result.set_status(Unknown);
+                            }
+                        },
+                        None => {
+                            CALLBACKS_COUNTER.with_label_values(&["unknown_error"]).inc();
+                            fcm_result.set_successful(false);
+                            fcm_result.set_status(Unknown);
+                        }
                     }
 
                     event.mut_google().set_response(fcm_result);
