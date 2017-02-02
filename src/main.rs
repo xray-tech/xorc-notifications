@@ -29,6 +29,7 @@ mod logger;
 mod metrics;
 mod config;
 mod certificate_registry;
+mod pool;
 mod producer;
 
 use syslog::Facility;
@@ -92,7 +93,7 @@ fn main() {
     let (tx_response, rx_response): (Sender<ApnsResponse>, Receiver<ApnsResponse>) = mpsc::channel();
 
     let mut threads : Vec<JoinHandle<_>> = (0..number_of_threads).map(|i| {
-        let consumer = Consumer::new(control.clone(), config.clone(), certificate_registry.clone(), tx_response.clone());
+        let mut consumer = Consumer::new(control.clone(), config.clone(), certificate_registry.clone(), tx_response.clone());
 
         thread::spawn(move || {
             info!("Starting consumer #{}", i);

@@ -13,17 +13,17 @@ use time::precise_time_ns;
 use config::Config;
 use amqp::{Session, Channel, Table, Basic, Options};
 use amqp::protocol::basic::BasicProperties;
-use apns2::{AsyncResponse, APNSStatus, APNSError};
+use apns2::client::{ProviderResponse, APNSStatus, APNSError};
 use protobuf::core::Message;
 use metrics::{CALLBACKS_COUNTER, CALLBACKS_INFLIGHT, RESPONSE_TIMES_HISTOGRAM};
 
-pub type ApnsResponse = (PushNotification, Option<AsyncResponse>);
+pub type ApnsResponse = (PushNotification, Option<ProviderResponse>);
 
 pub struct ResponseProducer {
     config: Arc<Config>,
     session: Session,
     channel: Channel,
-    rx: Receiver<(PushNotification, Option<AsyncResponse>)>,
+    rx: Receiver<(PushNotification, Option<ProviderResponse>)>,
     control: Arc<AtomicBool>,
 }
 

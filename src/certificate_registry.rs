@@ -23,10 +23,18 @@ pub struct CertificateData<'a> {
     pub certificate: Cursor<&'a [u8]>,
     pub private_key: Cursor<&'a [u8]>,
     pub updated_at: Option<Timespec>,
-    pub apns_topic: Option<String>,
-    pub is_sandbox: bool
+    pub apns_topic: String,
+    pub is_sandbox: bool,
 }
 
+pub struct TokenData<'a> {
+    pub private_key: Cursor<&'a [u8]>,
+    pub updated_at: Option<Timespec>,
+    pub apns_topic: String,
+    pub team_id: String,
+    pub key_id: String,
+    pub is_sandbox: bool,
+}
 
 impl CertificateRegistry {
     pub fn new(config: Arc<Config>) -> CertificateRegistry {
@@ -55,6 +63,7 @@ impl CertificateRegistry {
                      WHERE ios.application_id = $1 \
                      AND ios.enabled IS TRUE AND app.deleted_at IS NULL \
                      AND ios.certificate IS NOT NULL AND ios.private_key IS NOT NULL \
+                     AND ios.connection_type = 'certificate' \
                      LIMIT 1";
 
         let connection = self.pool.get().unwrap();
@@ -77,6 +86,48 @@ impl CertificateRegistry {
                         updated_at: row.get("updated_at"),
                         apns_topic: row.get("apns_topic"),
                         is_sandbox: row.get("is_sandbox"),
+                    })
+                }
+            },
+            Err(e) => Err(CertificateError::Postgres(e)),
+        }
+    }
+
+    pub fn with_token<T, F>(&self, application: &str, f: F) -> Result<T, CertificateError>
+        where F: FnOnce(TokenData) -> Result<T, CertificateError> {
+
+        info!("Loading tokens from database for {}", application);
+
+        let query = "SELECT ios.token_der, ios.apns_topic, ios.updated_at, ios.is_sandbox, ios.key_id, ios.team_id \
+                     FROM ios_applications ios \
+                     INNER JOIN applications app ON app.id = ios.application_id \
+                     WHERE ios.application_id = $1 \
+                     AND ios.enabled IS TRUE AND app.deleted_at IS NULL \
+                     AND ios.token_der IS NOT NULL AND ios.key_id IS NOT NULL AND ios.team_id IS NOT NULL \
+                     AND ios.connection_type = 'token' \
+                     LIMIT 1";
+
+        let connection = self.pool.get().unwrap();
+
+        let result = match application.parse::<i32>() {
+            Ok(application_id) => connection.query(query, &[&application_id]),
+            Err(_) => return Err(CertificateError::ApplicationIdError(format!("Invalid application_id: '{}'", application))),
+        };
+
+        match result {
+            Ok(rows) => {
+                if rows.is_empty() {
+                    Err(CertificateError::NotFoundError(format!("Couldn't find a token for {}", application)))
+                } else {
+                    let row = rows.get(0);
+
+                    f(TokenData {
+                        private_key: Cursor::new(row.get_bytes("token_der").unwrap()),
+                        updated_at: row.get("updated_at"),
+                        apns_topic: row.get("apns_topic"),
+                        is_sandbox: row.get("is_sandbox"),
+                        team_id: row.get("team_id"),
+                        key_id: row.get("key_id"),
                     })
                 }
             },
