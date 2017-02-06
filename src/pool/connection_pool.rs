@@ -1,7 +1,8 @@
+use std::sync::Arc;
+use config::Config;
 use std::collections::HashMap;
 use certificate_registry::{CertificateRegistry};
 use notifier::{TokenNotifier, CertificateNotifier};
-use std::sync::Arc;
 use time::precise_time_s;
 use apns2::apns_token::ApnsToken;
 use pool::{NotifierPool, TokenPool, Token, Notifier};
@@ -11,6 +12,7 @@ pub struct ConnectionPool {
     token_pool: TokenPool,
     last_connection_test: f64,
     token_notifiers: HashMap<&'static str, TokenNotifier>,
+    config: Arc<Config>,
     cache_ttl: f64,
 }
 
@@ -20,12 +22,13 @@ pub enum ApnsConnection<'a> {
 }
 
 impl ConnectionPool {
-    pub fn new(certificate_registry: Arc<CertificateRegistry>) -> ConnectionPool {
+    pub fn new(certificate_registry: Arc<CertificateRegistry>, config: Arc<Config>) -> ConnectionPool {
         let mut token_notifiers = HashMap::new();
-        token_notifiers.insert("staging", TokenNotifier::new(true));
-        token_notifiers.insert("production", TokenNotifier::new(true));
+        token_notifiers.insert("staging", TokenNotifier::new(true, config.clone()));
+        token_notifiers.insert("production", TokenNotifier::new(true, config.clone()));
 
         ConnectionPool {
+            config: config,
             notifier_pool: NotifierPool::new(certificate_registry.clone()),
             token_pool: TokenPool::new(certificate_registry.clone()),
             token_notifiers: token_notifiers,
@@ -46,7 +49,7 @@ impl ConnectionPool {
                             error!("Error with token connection ping for {}, reconnecting: {:?}", stage, e);
 
                             self.token_notifiers.remove(stage);
-                            self.token_notifiers.insert(stage, TokenNotifier::new(is_sandbox));
+                            self.token_notifiers.insert(stage, TokenNotifier::new(is_sandbox, self.config.clone()));
                         }
                     }
 

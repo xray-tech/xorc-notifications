@@ -1,3 +1,5 @@
+use std::sync::Arc;
+use config::Config;
 use apns2::client::{TokenClient, CertificateClient, ProviderResponse};
 use apns2::notification::{NotificationOptions, Notification};
 use apns2::payload::{APSAlert, Payload, APSLocalizedAlert, CustomData};
@@ -31,9 +33,9 @@ impl CertificateNotifier {
 }
 
 impl TokenNotifier {
-    pub fn new(sandbox: bool) -> TokenNotifier {
+    pub fn new(sandbox: bool, config: Arc<Config>) -> TokenNotifier {
         TokenNotifier {
-            client: TokenClient::new(sandbox, "/etc/ssl/cert.pem").unwrap(),
+            client: TokenClient::new(sandbox, &config.general.certificates).unwrap(),
         }
     }
 
