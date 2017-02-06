@@ -90,7 +90,7 @@ impl Consumer {
                         Some(ApnsConnection::WithCertificate { ref notifier, ref topic }) =>
                             Some(notifier.send(&event, topic)),
                         Some(ApnsConnection::WithToken { ref notifier, ref token, ref topic }) =>
-                            Some(notifier.send(&event, topic, &token.signature())),
+                            Some(notifier.send(&event, topic, token.signature())),
                         None => None
                     };
 
