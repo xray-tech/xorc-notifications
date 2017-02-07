@@ -62,8 +62,8 @@ fn gen_payload(event: &PushNotification) -> Payload {
     let notification_data = event.get_apple();
 
     let badge = if notification_data.has_badge() {
-        notification_data.get_badge()
-    } else { 1u32 };
+        Some(notification_data.get_badge())
+    } else { Some(1u32) };
 
     let sound = if notification_data.has_sound() {
         notification_data.get_sound()
@@ -127,12 +127,12 @@ fn gen_payload(event: &PushNotification) -> Payload {
                 launch_image: launch_image,
             });
 
-        Payload::new(alert, badge, sound, category, custom_data)
+        Payload::new(alert, sound, badge, category, custom_data)
     } else if notification_data.has_silent() {
         Payload::new_silent_notification(custom_data)
     } else {
         let alert = APSAlert::Plain(notification_data.get_plain().to_string());
 
-        Payload::new(alert, badge, sound, category, custom_data)
+        Payload::new(alert, sound, badge, category, custom_data)
     }
 }
