@@ -76,8 +76,8 @@ impl Consumer {
             channel: channel,
             session: session,
             control: control,
+            pool: ConnectionPool::new(certificate_registry, config.clone()),
             config: config,
-            pool: ConnectionPool::new(certificate_registry),
             tx_response: tx_response,
         }
     }

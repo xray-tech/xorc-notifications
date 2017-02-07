@@ -122,7 +122,7 @@ impl ResponseProducer {
                             }
 
                             match apns_result.get_reason() {
-                                InternalServerError | Shutdown | ServiceUnavailable => {
+                                InternalServerError | Shutdown | ServiceUnavailable | ExpiredProviderToken => {
                                     event.set_retry_after(retry_after);
                                     "retry"
                                 },
@@ -227,6 +227,9 @@ impl ResponseProducer {
             Some(APNSError::InternalServerError)       => Some(String::from("internal_server_error")),
             Some(APNSError::ServiceUnavailable)        => Some(String::from("service_unavailable")),
             Some(APNSError::MissingTopic)              => Some(String::from("missing_topic")),
+            Some(APNSError::InvalidProviderToken)      => Some(String::from("invalid_provider_token")),
+            Some(APNSError::MissingProviderToken)      => Some(String::from("missing_provider_token")),
+            Some(APNSError::ExpiredProviderToken)      => Some(String::from("expired_provider_token")),
             _                                          => None,
         }
     }
@@ -256,6 +259,9 @@ impl ResponseProducer {
             Some(APNSError::InternalServerError)       => Some(InternalServerError),
             Some(APNSError::ServiceUnavailable)        => Some(ServiceUnavailable),
             Some(APNSError::MissingTopic)              => Some(MissingTopic),
+            Some(APNSError::InvalidProviderToken)      => Some(InvalidProviderToken),
+            Some(APNSError::MissingProviderToken)      => Some(MissingProviderToken),
+            Some(APNSError::ExpiredProviderToken)      => Some(ExpiredProviderToken),
             _                                          => None,
         }
     }
