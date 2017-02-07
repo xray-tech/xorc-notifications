@@ -1,7 +1,6 @@
 use apns2::client::{TokenClient, CertificateClient, ProviderResponse};
 use apns2::notification::{NotificationOptions, Notification};
 use apns2::payload::{APSAlert, Payload, APSLocalizedAlert, CustomData};
-use apns2::device_token::DeviceToken;
 use events::push_notification::PushNotification;
 use std::io::Read;
 use rustc_serialize::json::{Json};
@@ -24,25 +23,23 @@ impl CertificateNotifier {
     pub fn send(&self, event: &PushNotification, apns_topic: &str) -> ProviderResponse {
         let payload      = gen_payload(event);
         let options      = gen_options(event, apns_topic);
-        let device_token = DeviceToken::new(event.get_device_token());
 
-        self.client.push(Notification::new(payload, device_token, options))
+        self.client.push(Notification::new(payload, event.get_device_token(), options))
     }
 }
 
 impl TokenNotifier {
     pub fn new(sandbox: bool) -> TokenNotifier {
         TokenNotifier {
-            client: TokenClient::new(sandbox, "/etc/ssl/cert.pem").unwrap(),
+            client: TokenClient::new(sandbox, "/etc/ssl/certs/").unwrap(),
         }
     }
 
     pub fn send(&self, event: &PushNotification, apns_topic: &str, apns_token: &str) -> ProviderResponse {
         let payload      = gen_payload(event);
         let options      = gen_options(event, apns_topic);
-        let device_token = DeviceToken::new(event.get_device_token());
 
-        self.client.push(Notification::new(payload, device_token, options), apns_token)
+        self.client.push(Notification::new(payload, event.get_device_token(), options), apns_token)
     }
 }
 

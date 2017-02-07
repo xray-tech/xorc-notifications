@@ -51,7 +51,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 [[package]]
 name = "apns2"
 version = "0.1.0"
-source = "git+https://github.com/pimeys/apns2#3a634cf4104fc77b3a7cb54f2b4ba41d452ed60e"
+source = "git+https://github.com/pimeys/apns2#7386025f060af33a1f9183c88f4fc808bc70d50a"
 dependencies = [
  "btls 0.17.1 (git+https://gitlab.com/ilari_l/btls.git)",
  "openssl 0.7.14 (registry+https://github.com/rust-lang/crates.io-index)",

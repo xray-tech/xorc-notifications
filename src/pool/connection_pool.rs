@@ -3,7 +3,7 @@ use certificate_registry::{CertificateRegistry};
 use notifier::{TokenNotifier, CertificateNotifier};
 use std::sync::Arc;
 use time::precise_time_s;
-use apns2::apns_token::ApnsToken;
+use apns2::apns_token::APNSToken;
 use pool::{NotifierPool, TokenPool, Token, Notifier};
 
 pub struct ConnectionPool {
@@ -16,7 +16,7 @@ pub struct ConnectionPool {
 
 pub enum ApnsConnection<'a> {
     WithCertificate { notifier: &'a CertificateNotifier, topic: &'a str },
-    WithToken { notifier: &'a TokenNotifier, token: &'a ApnsToken, topic: &'a str }
+    WithToken { notifier: &'a TokenNotifier, token: &'a APNSToken, topic: &'a str }
 }
 
 impl ConnectionPool {

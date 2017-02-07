@@ -2,10 +2,10 @@ use std::collections::HashMap;
 use certificate_registry::{CertificateRegistry, CertificateError, TokenData};
 use std::sync::Arc;
 use time::{precise_time_s, Timespec};
-use apns2::apns_token::ApnsToken;
+use apns2::apns_token::APNSToken;
 
 pub struct Token {
-    pub apns: Option<ApnsToken>,
+    pub apns: Option<APNSToken>,
     pub sandbox: bool,
     pub topic: String,
     pub updated_at: Option<Timespec>,
@@ -58,7 +58,7 @@ impl TokenPool {
         let create_token = move |token: TokenData| {
             if token.updated_at != last_update {
                 Ok(Token {
-                    apns: Some(ApnsToken::new(token.private_key, token.key_id, token.team_id).unwrap()),
+                    apns: Some(APNSToken::new(token.private_key, token.key_id, token.team_id).unwrap()),
                     sandbox: token.is_sandbox,
                     topic: token.apns_topic,
                     updated_at: token.updated_at,
@@ -96,7 +96,7 @@ impl TokenPool {
     fn create_new(&mut self, application_id: &str) {
         let create_token = move |token: TokenData| {
             Ok(Token {
-                apns: Some(ApnsToken::new(token.private_key, token.key_id, token.team_id).unwrap()),
+                apns: Some(APNSToken::new(token.private_key, token.key_id, token.team_id).unwrap()),
                 sandbox: token.is_sandbox,
                 topic: token.apns_topic,
                 updated_at: token.updated_at,
