@@ -114,7 +114,7 @@ impl Consumer {
                 if !self.control.load(Ordering::Relaxed) { break; }
             }
 
-            thread::park_timeout(Duration::from_millis(100));
+            thread::park_timeout(Duration::from_millis(10));
         }
 
         Ok(())
