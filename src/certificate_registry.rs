@@ -57,7 +57,7 @@ impl CertificateRegistry {
 
         info!("Loading certificates from database for {}", application);
 
-        let query = "SELECT ios.certificate, ios.private_key, ios.apns_topic, ios.updated_at, ios.is_sandbox \
+        let query = "SELECT ios.certificate, ios.private_key, ios.apns_topic, ios.updated_at, ios.cert_is_sandbox \
                      FROM ios_applications ios \
                      INNER JOIN applications app ON app.id = ios.application_id \
                      WHERE ios.application_id = $1 \
@@ -85,7 +85,7 @@ impl CertificateRegistry {
                         private_key: Cursor::new(row.get_bytes("private_key").unwrap()),
                         updated_at: row.get("updated_at"),
                         apns_topic: row.get("apns_topic"),
-                        is_sandbox: row.get("is_sandbox"),
+                        is_sandbox: row.get("cert_is_sandbox"),
                     })
                 }
             },
@@ -98,7 +98,7 @@ impl CertificateRegistry {
 
         info!("Loading tokens from database for {}", application);
 
-        let query = "SELECT ios.token_der, ios.apns_topic, ios.updated_at, ios.is_sandbox, ios.key_id, ios.team_id \
+        let query = "SELECT ios.token_der, ios.apns_topic, ios.updated_at, ios.token_is_sandbox, ios.key_id, ios.team_id \
                      FROM ios_applications ios \
                      INNER JOIN applications app ON app.id = ios.application_id \
                      WHERE ios.application_id = $1 \
@@ -125,7 +125,7 @@ impl CertificateRegistry {
                         private_key: Cursor::new(row.get_bytes("token_der").unwrap()),
                         updated_at: row.get("updated_at"),
                         apns_topic: row.get("apns_topic"),
-                        is_sandbox: row.get("is_sandbox"),
+                        is_sandbox: row.get("token_is_sandbox"),
                         team_id: row.get("team_id"),
                         key_id: row.get("key_id"),
                     })
