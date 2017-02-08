@@ -88,7 +88,7 @@ impl Consumer {
             config: config,
             certificate_registry: certificate_registry,
             tx_response: tx_response,
-            cache_ttl: 60.0,
+            cache_ttl: 120.0,
         }
     }
 
