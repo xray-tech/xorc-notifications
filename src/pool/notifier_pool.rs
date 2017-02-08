@@ -27,11 +27,10 @@ impl NotifierPool {
     }
 
     pub fn get(&mut self, application_id: &str) -> Option<&Notifier> {
-        self.update(application_id);
         self.notifiers.get(application_id)
     }
 
-    fn update(&mut self, application_id: &str) {
+    pub fn update(&mut self, application_id: &str) {
         if self.notifiers.get(application_id).is_some() {
             if self.is_expired(self.notifiers.get(application_id).unwrap().timestamp) {
                 self.update_expired(application_id);

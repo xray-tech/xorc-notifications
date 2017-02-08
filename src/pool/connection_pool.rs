@@ -38,6 +38,9 @@ impl ConnectionPool {
     }
 
     pub fn get(&mut self, application_id: &str) -> Option<ApnsConnection> {
+        self.token_pool.update(application_id);
+        self.notifier_pool.update(application_id);
+
         match self.token_pool.get(application_id) {
             Some(&Token { apns: Some(ref token), topic: ref t, sandbox: is_sandbox, timestamp: _, updated_at: _ }) => {
                 let stage = if is_sandbox { "staging" } else { "production" };

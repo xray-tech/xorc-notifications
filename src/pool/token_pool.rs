@@ -28,11 +28,10 @@ impl TokenPool {
     }
 
     pub fn get(&mut self, application_id: &str) -> Option<&Token> {
-        self.update(application_id);
         self.tokens.get(application_id)
     }
 
-    fn update(&mut self, application_id: &str) {
+    pub fn update(&mut self, application_id: &str) {
         match self.tokens.get_mut(application_id) {
             Some(ref mut token) => match token.apns {
                 Some(ref mut apns) if apns.is_expired() => {
