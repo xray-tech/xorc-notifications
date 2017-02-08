@@ -25,7 +25,7 @@ impl ConnectionPool {
     pub fn new(certificate_registry: Arc<CertificateRegistry>, config: Arc<Config>) -> ConnectionPool {
         let mut token_notifiers = HashMap::new();
         token_notifiers.insert("staging", TokenNotifier::new(true, config.clone()));
-        token_notifiers.insert("production", TokenNotifier::new(true, config.clone()));
+        token_notifiers.insert("production", TokenNotifier::new(false, config.clone()));
 
         ConnectionPool {
             config: config,
