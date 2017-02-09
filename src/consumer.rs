@@ -83,8 +83,16 @@ impl Consumer {
     }
 
     pub fn consume(&mut self) -> Result<(), Error> {
+        let mut changes: u64;
+
         while self.control.load(Ordering::Relaxed) {
+            changes = 0;
+
             for result in self.channel.basic_get(&self.config.rabbitmq.queue, false) {
+                result.ack();
+
+                changes = changes + 1;
+
                 if let Ok(event) = parse_from_bytes::<PushNotification>(&result.body) {
                     let response = match self.pool.get(event.get_application_id()) {
                         Some(ApnsConnection::WithCertificate { ref notifier, ref topic }) =>
@@ -101,12 +109,12 @@ impl Consumer {
                     error!("Broken protobuf data");
                 }
 
-                result.ack();
-
                 if !self.control.load(Ordering::Relaxed) { break; }
             }
 
-            thread::park_timeout(Duration::from_millis(100));
+            if changes == 0 {
+                thread::park_timeout(Duration::from_millis(100));
+            }
         }
 
         Ok(())
