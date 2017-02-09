@@ -86,7 +86,7 @@ impl Consumer {
             config: config,
             tx: tx,
             registry: registry,
-            cache_ttl: 10.0,
+            cache_ttl: 120.0,
         }
     }
 
