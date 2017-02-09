@@ -93,9 +93,16 @@ impl Consumer {
     pub fn consume(&self) -> Result<(), Error> {
         let mut certificates: HashMap<String, ApiKey> = HashMap::new();
         let mut channel = self.channel.lock().unwrap();
+        let mut changes: u64;
 
         while self.control.load(Ordering::Relaxed) {
+            changes = 0;
+
             for result in channel.basic_get(&self.config.rabbitmq.queue, false) {
+                result.ack();
+
+                changes = changes + 1;
+
                 if let Ok(event) = parse_from_bytes::<PushNotification>(&result.body) {
                     self.update_certificates(&mut certificates, event.get_application_id());
 
@@ -109,12 +116,12 @@ impl Consumer {
                     error!("Broken protobuf data");
                 }
 
-                result.ack();
-
                 if !self.control.load(Ordering::Relaxed) { break; }
             }
 
-            thread::park_timeout(Duration::from_millis(10));
+            if changes == 0 {
+                thread::park_timeout(Duration::from_millis(100));
+            }
         }
 
         Ok(())
