@@ -22,7 +22,7 @@ impl NotifierPool {
         NotifierPool {
             certificate_registry: certificate_registry,
             notifiers: HashMap::new(),
-            cache_ttl: 60.0,
+            cache_ttl: 120.0,
         }
     }
 
