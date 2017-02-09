@@ -3,6 +3,7 @@ use notifier::*;
 use std::sync::Arc;
 use time::{precise_time_s, Timespec};
 use std::collections::HashMap;
+use metrics::APNS_CONNECTIONS;
 
 pub struct Notifier {
     pub apns: Option<CertificateNotifier>,
@@ -52,6 +53,7 @@ impl NotifierPool {
 
         match self.certificate_registry.with_certificate(application_id, create_notifier) {
             Ok(notifier) => {
+                APNS_CONNECTIONS.inc();
                 self.notifiers.insert(application_id.to_string(), notifier);
             },
             Err(e) => {
@@ -104,7 +106,9 @@ impl NotifierPool {
         match self.certificate_registry.with_certificate(&application_id, create_notifier) {
             Ok(notifier) => {
                 self.notifiers.remove(application_id);
+                APNS_CONNECTIONS.dec();
                 self.notifiers.insert(application_id.to_string(), notifier);
+                APNS_CONNECTIONS.inc();
                 info!("New certificate for application {}", application_id);
             },
             Err(CertificateError::NotChanged(s)) => {
@@ -121,6 +125,7 @@ impl NotifierPool {
                 notifier.apns = None;
                 notifier.topic = String::new();
                 notifier.updated_at = None;
+                APNS_CONNECTIONS.dec();
             }
         }
     }

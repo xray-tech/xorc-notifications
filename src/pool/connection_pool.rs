@@ -6,6 +6,7 @@ use notifier::{TokenNotifier, CertificateNotifier};
 use time::precise_time_s;
 use apns2::apns_token::APNSToken;
 use pool::{NotifierPool, TokenPool, Token, Notifier};
+use metrics::APNS_CONNECTIONS;
 
 pub struct ConnectionPool {
     notifier_pool: NotifierPool,
@@ -24,8 +25,12 @@ pub enum ApnsConnection<'a> {
 impl ConnectionPool {
     pub fn new(certificate_registry: Arc<CertificateRegistry>, config: Arc<Config>) -> ConnectionPool {
         let mut token_notifiers = HashMap::new();
+
         token_notifiers.insert("staging", TokenNotifier::new(true, config.clone()));
+        APNS_CONNECTIONS.inc();
+
         token_notifiers.insert("production", TokenNotifier::new(false, config.clone()));
+        APNS_CONNECTIONS.inc();
 
         ConnectionPool {
             config: config,
@@ -52,7 +57,10 @@ impl ConnectionPool {
                             error!("Error with token connection ping for {}, reconnecting: {:?}", stage, e);
 
                             self.token_notifiers.remove(stage);
+                            APNS_CONNECTIONS.dec();
+
                             self.token_notifiers.insert(stage, TokenNotifier::new(is_sandbox, self.config.clone()));
+                            APNS_CONNECTIONS.inc();
                         }
                     }
 

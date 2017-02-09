@@ -21,6 +21,11 @@ lazy_static! {
         "http_request_latency_seconds",
         "The HTTP request latencies in seconds"
     ).unwrap();
+
+    pub static ref APNS_CONNECTIONS: Gauge = register_gauge!(
+        "apns_http2_connections",
+        "Number of http2 connections to Apple push notification service"
+    ).unwrap();
 }
 
 pub trait StatisticsServer {}
