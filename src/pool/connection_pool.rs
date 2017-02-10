@@ -3,10 +3,9 @@ use config::Config;
 use std::collections::HashMap;
 use certificate_registry::{CertificateRegistry};
 use notifier::{TokenNotifier, CertificateNotifier};
-use time::{precise_time_s, precise_time_ns};
+use time::precise_time_s;
 use apns2::apns_token::APNSToken;
 use pool::{NotifierPool, TokenPool, Token, Notifier};
-use metrics::POOL_UPDATE;
 
 pub struct ConnectionPool {
     notifier_pool: NotifierPool,
@@ -40,13 +39,8 @@ impl ConnectionPool {
     }
 
     pub fn get(&mut self, application_id: &str) -> Option<ApnsConnection> {
-        Self::time_pool_update("token", || {
-            self.token_pool.update(application_id);
-        });
-
-        Self::time_pool_update("certificate", || {
-            self.notifier_pool.update(application_id);
-        });
+        self.token_pool.update(application_id);
+        self.notifier_pool.update(application_id);
 
         match self.token_pool.get(application_id) {
             Some(&Token { apns: Some(ref token), topic: ref t, sandbox: is_sandbox, timestamp: _, updated_at: _ }) => {
@@ -83,11 +77,5 @@ impl ConnectionPool {
                     None,
             },
         }
-    }
-
-    fn time_pool_update<F>(typ: &str, f: F) where F: FnOnce() {
-        let start = precise_time_ns();
-        f();
-        POOL_UPDATE.with_label_values(&[typ]).observe((precise_time_ns() - start) as f64);
     }
 }
