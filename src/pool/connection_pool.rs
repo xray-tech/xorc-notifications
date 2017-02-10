@@ -88,6 +88,6 @@ impl ConnectionPool {
     fn time_pool_update<F>(typ: &str, f: F) where F: FnOnce() {
         let start = precise_time_ns();
         f();
-        POOL_UPDATE.with_label_values(&[typ]).observe((precise_time_ns() - start) as f64);
+        POOL_UPDATE.with_label_values(&[typ]).observe(((precise_time_ns() - start) as f64) / 1000000000.0);
     }
 }
