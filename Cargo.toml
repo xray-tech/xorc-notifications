@@ -5,7 +5,7 @@ authors = ["Julius de Bruijn <julius.debruijn@360dialog.com>"]
 build = "build.rs"
 
 [dependencies]
-apns2 = { git = "https://github.com/pimeys/apns2", rev = "a018d1ef2d48b36e833c7d2938021f1505160af6"}
+apns2 = { git = "https://github.com/pimeys/apns2"}
 amqp = "0.0.16"
 protobuf = "1.2.1"
 chan-signal = "0.1.6"

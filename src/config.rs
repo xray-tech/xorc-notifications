@@ -7,6 +7,7 @@ use toml;
 pub struct Config {
     pub postgres: PostgresConfig,
     pub rabbitmq: RabbitMqConfig,
+    pub general: GeneralConfig,
 }
 
 impl Config {
@@ -40,6 +41,11 @@ impl Config {
 
         toml::decode(config).unwrap()
     }
+}
+
+#[derive(RustcEncodable, RustcDecodable, Debug)]
+pub struct GeneralConfig {
+    pub certificates: String,
 }
 
 #[derive(RustcEncodable, RustcDecodable, Debug)]

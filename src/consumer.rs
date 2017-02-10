@@ -1,40 +1,31 @@
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 use std::thread;
 use amqp::{Session, Channel, Table, Basic, Options};
 use events::push_notification::PushNotification;
-use notifier::Apns2Notifier;
-use apns2::AsyncResponse;
+use apns2::client::ProviderResponse;
 use protobuf::parse_from_bytes;
 use config::Config;
 use hyper::error::Error;
-use certificate_registry::{CertificateRegistry, CertificateError, CertificateData};
+use certificate_registry::CertificateRegistry;
 use std::sync::mpsc::Sender;
 use producer::ApnsResponse;
-use time::{precise_time_s, Timespec};
+use pool::{ConnectionPool, ApnsConnection};
 use metrics::CALLBACKS_INFLIGHT;
 
-struct Notifier {
-    apns: Option<Apns2Notifier>,
-    updated_at: Option<Timespec>,
-    timestamp: f64,
-}
-
 pub struct Consumer {
-    channel: Mutex<Channel>,
+    channel: Channel,
     session: Session,
     control: Arc<AtomicBool>,
     config: Arc<Config>,
-    certificate_registry: Arc<CertificateRegistry>,
+    pool: ConnectionPool,
     tx_response: Sender<ApnsResponse>,
-    cache_ttl: f64,
 }
 
 impl Drop for Consumer {
     fn drop(&mut self) {
-        let _ = self.channel.lock().unwrap().close(200, "Bye!");
+        let _ = self.channel.close(200, "Bye!");
         let _ = self.session.close(200, "Good bye!");
     }
 }
@@ -43,7 +34,7 @@ impl Consumer {
     pub fn new(control: Arc<AtomicBool>,
                config: Arc<Config>,
                certificate_registry: Arc<CertificateRegistry>,
-               tx_response: Sender<(PushNotification, Option<AsyncResponse>)>) -> Consumer {
+               tx_response: Sender<(PushNotification, Option<ProviderResponse>)>) -> Consumer {
 
         let mut session = Session::new(Options {
             vhost: &config.rabbitmq.vhost,
@@ -82,38 +73,37 @@ impl Consumer {
             Table::new()).unwrap();
 
         Consumer {
-            channel: Mutex::new(channel),
+            channel: channel,
             session: session,
             control: control,
+            pool: ConnectionPool::new(certificate_registry, config.clone()),
             config: config,
-            certificate_registry: certificate_registry,
             tx_response: tx_response,
-            cache_ttl: 120.0,
         }
     }
 
-    pub fn consume(&self) -> Result<(), Error> {
-        let mut notifiers: HashMap<String, Notifier> = HashMap::new();
-        let mut channel = self.channel.lock().unwrap();
+    pub fn consume(&mut self) -> Result<(), Error> {
         let mut changes: u64;
 
         while self.control.load(Ordering::Relaxed) {
             changes = 0;
 
-            for result in channel.basic_get(&self.config.rabbitmq.queue, false) {
+            for result in self.channel.basic_get(&self.config.rabbitmq.queue, false) {
                 result.ack();
 
                 changes = changes + 1;
 
                 if let Ok(event) = parse_from_bytes::<PushNotification>(&result.body) {
-                    self.update_notifiers(&mut notifiers, event.get_application_id());
-
-                    let response = match notifiers.get(event.get_application_id()) {
-                        Some(&Notifier { apns: Some(ref apns), timestamp: _, updated_at: _ }) => Some(apns.send(&event)),
-                        _ => None,
+                    let response = match self.pool.get(event.get_application_id()) {
+                        Some(ApnsConnection::WithCertificate { ref notifier, ref topic }) =>
+                            Some(notifier.send(&event, topic)),
+                        Some(ApnsConnection::WithToken { ref notifier, ref token, ref topic }) =>
+                            Some(notifier.send(&event, topic, token.signature())),
+                        None => None
                     };
 
                     CALLBACKS_INFLIGHT.inc();
+
                     self.tx_response.send((event, response)).unwrap();
                 } else {
                     error!("Broken protobuf data");
@@ -128,90 +118,5 @@ impl Consumer {
         }
 
         Ok(())
-    }
-
-    fn update_notifiers(&self, notifiers: &mut HashMap<String, Notifier>, application_id: &str) {
-        if notifiers.get(application_id).is_some() && self.is_expired(notifiers.get(application_id).unwrap()){
-            let last_update = notifiers.get(application_id).unwrap().updated_at.clone();
-
-            let mut ping_result = None;
-
-            if let Some(ref apns) = notifiers.get(application_id).unwrap().apns {
-                ping_result = Some(apns.apns2_provider.client.ping());
-            }
-
-            let create_notifier = move |cert: CertificateData| {
-                if cert.updated_at != last_update {
-                    Ok(Notifier {
-                        apns: Some(Apns2Notifier::new(cert.certificate, cert.private_key, cert.apns_topic, &cert.is_sandbox)),
-                        updated_at: cert.updated_at,
-                        timestamp: precise_time_s(),
-                    })
-                } else {
-                    match ping_result {
-                        Some(Ok(())) => Err(CertificateError::NotChanged(format!("No changes to the certificate, ping ok"))),
-                        None => Err(CertificateError::NotChanged(format!("No changes to the certificate"))),
-                        Some(Err(e)) => {
-                            error!("Error when pinging apns, reconnecting: {}", e);
-
-                            Ok(Notifier {
-                                apns: Some(Apns2Notifier::new(cert.certificate, cert.private_key, cert.apns_topic, &cert.is_sandbox)),
-                                updated_at: cert.updated_at,
-                                timestamp: precise_time_s(),
-                            })
-                        }
-                    }
-                }
-            };
-
-            match self.certificate_registry.with_certificate(&application_id, create_notifier) {
-                Ok(notifier) => {
-                    notifiers.remove(application_id);
-                    notifiers.insert(application_id.to_string(), notifier);
-                    info!("New certificate for application {}", application_id);
-                },
-                Err(CertificateError::NotChanged(s)) => {
-                    let mut notifier = notifiers.get_mut(application_id).unwrap();
-                    notifier.timestamp = precise_time_s();
-
-                    info!("Alles gut for application {}: {:?}", application_id, s);
-                },
-                Err(e) => {
-                    error!("Error when fetching certificate for {}, removing: {:?}", application_id, e);
-
-                    let mut notifier = notifiers.get_mut(application_id).unwrap();
-                    notifier.timestamp = precise_time_s();
-                    notifier.apns = None;
-                    notifier.updated_at = None;
-                }
-            }
-        } else if notifiers.get(application_id).is_none() {
-            let create_notifier = move |cert: CertificateData| {
-                Ok(Notifier {
-                    apns: Some(Apns2Notifier::new(cert.certificate, cert.private_key, cert.apns_topic, &cert.is_sandbox)),
-                    updated_at: cert.updated_at,
-                    timestamp: precise_time_s(),
-                })
-            };
-
-            match self.certificate_registry.with_certificate(application_id, create_notifier) {
-                Ok(notifier) => {
-                    notifiers.insert(application_id.to_string(), notifier);
-                },
-                Err(e) => {
-                    error!("Error when fetching certificate for {}: {:?}", application_id, e);
-
-                    notifiers.insert(application_id.to_string(), Notifier {
-                        apns: None,
-                        updated_at: None,
-                        timestamp: precise_time_s(),
-                    });
-                }
-            }
-        }
-    }
-
-    fn is_expired(&self, notifier: &Notifier) -> bool {
-        precise_time_s() - notifier.timestamp >= self.cache_ttl
     }
 }
