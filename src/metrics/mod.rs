@@ -1,4 +1,4 @@
-use prometheus::{CounterVec, Histogram, Gauge, TextEncoder, Encoder, self};
+use prometheus::{CounterVec, Histogram, HistogramVec, Gauge, TextEncoder, Encoder, self};
 use std::env;
 
 use hyper::header::ContentType;
@@ -25,6 +25,12 @@ lazy_static! {
     pub static ref APNS_CONNECTIONS: Gauge = register_gauge!(
         "apns_http2_connections",
         "Number of http2 connections to Apple push notification service"
+    ).unwrap();
+
+    pub static ref POOL_UPDATE: HistogramVec = register_histogram_vec!(
+        "apns_pool_update",
+        "The time it takes to update the pool in apns consumer",
+        &["type"]
     ).unwrap();
 }
 
