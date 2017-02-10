@@ -3,7 +3,7 @@ use config::Config;
 use std::collections::HashMap;
 use certificate_registry::{CertificateRegistry};
 use notifier::{TokenNotifier, CertificateNotifier};
-use time::precise_time_s;
+use time::{precise_time_s, precise_time_ns};
 use apns2::apns_token::APNSToken;
 use pool::{NotifierPool, TokenPool, Token, Notifier};
 use metrics::POOL_UPDATE;
@@ -86,8 +86,8 @@ impl ConnectionPool {
     }
 
     fn time_pool_update<F>(typ: &str, f: F) where F: FnOnce() {
-        let start = precise_time_s();
+        let start = precise_time_ns();
         f();
-        POOL_UPDATE.with_label_values(&[typ]).observe(precise_time_s() - start);
+        POOL_UPDATE.with_label_values(&[typ]).observe(((precise_time_ns() - start) as f64) / 1000000000.0);
     }
 }
