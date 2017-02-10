@@ -34,7 +34,7 @@ impl ConnectionPool {
             token_pool: TokenPool::new(certificate_registry.clone()),
             token_notifiers: token_notifiers,
             last_connection_test: precise_time_s(),
-            cache_ttl: 120.0,
+            cache_ttl: 240.0,
         }
     }
 
