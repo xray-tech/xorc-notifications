@@ -26,7 +26,7 @@
       "maxConsecutiveFailures": 2
     }
   ],
-  "cmd": "./fcm-$commit -n 10 -c /config/current/dmp/fcm/production.toml",
+  "cmd": "./fcm-$commit -n 10 -c /configs/production/dmp/fcm/production.toml",
   "fetch": [
     {
       "uri": "http://artifactory.service.consul:8081/artifactory/fcm/production/fcm-$commit",
