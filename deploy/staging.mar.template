@@ -26,7 +26,7 @@
       "maxConsecutiveFailures": 2
     }
   ],
-  "cmd": "./apns2-$commit -n 4 -c /config-staging/current/dmp/apns2/staging.toml",
+  "cmd": "./apns2-$commit -n 4 -c /configs/staging/dmp/apns2/staging.toml",
   "fetch": [
     {
       "uri": "http://artifactory.service.consul:8081/artifactory/apns2/staging/apns2-$commit",
