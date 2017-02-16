@@ -81,7 +81,7 @@ fn gen_payload(event: &PushNotification) -> Payload {
 
     let badge = if notification_data.has_badge() {
         Some(notification_data.get_badge())
-    } else { Some(1u32) };
+    } else { None };
 
     let sound = if notification_data.has_sound() {
         notification_data.get_sound()
