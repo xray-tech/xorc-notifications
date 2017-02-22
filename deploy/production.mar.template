@@ -1,7 +1,7 @@
 {
   "id": "push-notifications/fcm/production",
-  "instances": 3,
-  "cpus": 1,
+  "instances": 6,
+  "cpus": 0.5,
   "mem": 512,
   "labels": {
     "collectd_app": "fcm-production",
@@ -26,7 +26,7 @@
       "maxConsecutiveFailures": 2
     }
   ],
-  "cmd": "./fcm-$commit -n 10 -c /configs/production/dmp/fcm/production.toml",
+  "cmd": "./fcm-$commit -c /configs/production/dmp/fcm/production.toml",
   "fetch": [
     {
       "uri": "http://artifactory.service.consul:8081/artifactory/fcm/production/fcm-$commit",
