@@ -87,60 +87,65 @@ fn main() {
     let certificate_registry = Arc::new(CertificateRegistry::new(config.clone()));
     let control              = Arc::new(AtomicBool::new(true));
 
-    // Consumer to notifier communication
-    let (notifier_tx, notifier_rx) = mpsc::channel(10000);
-
-    // Notifier to response producer communication
-    let (producer_tx, producer_rx) = mpsc::channel(10000);
+    let mut threads: Vec<JoinHandle<_>> = Vec::new();
 
     // Prometheus statistics server kill-switch
     let (server_tx, server_rx) = oneshot::channel();
 
-    let mut threads: Vec<JoinHandle<_>> = Vec::new();
+    {
+        // Consumer to notifier communication
+        let (notifier_tx, notifier_rx) = mpsc::channel(10000);
 
-    threads.push({
-        let notifier = Notifier::new();
+        // Notifier to response producer communication
+        let (producer_tx, producer_rx) = mpsc::channel(10000);
 
-        thread::spawn(move || {
-            info!("Starting async notifier thread...");
-            notifier.run(notifier_rx, producer_tx);
-            info!("Exiting async notifier thread...");
-        })
-    });
+        threads.push({
+            let notifier = Notifier::new();
 
-    threads.push({
-        let consumer = Consumer::new(
-            control.clone(),
-            config.clone(),
-            certificate_registry.clone());
+            thread::spawn(move || {
+                info!("Starting async notifier thread...");
+                notifier.run(notifier_rx, producer_tx);
+                info!("Exiting async notifier thread...");
+            })
+        });
 
-        thread::spawn(move || {
-            info!("Starting consumer...");
+        for i in 0..3 {
+            threads.push({
+                let consumer = Consumer::new(
+                    control.clone(),
+                    config.clone(),
+                    certificate_registry.clone());
+                let tx = notifier_tx.clone();
 
-            if let Err(error) = consumer.consume(notifier_tx) {
-                error!("Error in consumer: {:?}", error);
-            }
+                thread::spawn(move || {
+                    info!("Starting consumer {}...", i);
 
-            info!("Exiting consumer");
-        })
-    });
+                    if let Err(error) = consumer.consume(tx) {
+                        error!("Error in consumer: {:?}", error);
+                    }
 
-    threads.push({
-        let mut producer = ResponseProducer::new(config.clone());
+                    info!("Exiting consumer {}...", i);
+                })
+            });
+        }
 
-        thread::spawn(move || {
-            info!("Starting response producer thread...");
-            producer.run(producer_rx);
-            info!("Exiting response producer thread...");
-        })
-    });
+        threads.push({
+            let mut producer = ResponseProducer::new(config.clone());
 
-    threads.push({
-        thread::spawn(move || {
-            debug!("Starting statistics server...");
-            StatisticsServer::handle(server_rx);
-        })
-    });
+            thread::spawn(move || {
+                info!("Starting response producer thread...");
+                producer.run(producer_rx);
+                info!("Exiting response producer thread...");
+            })
+        });
+
+        threads.push({
+            thread::spawn(move || {
+                debug!("Starting statistics server...");
+                StatisticsServer::handle(server_rx);
+            })
+        });
+    }
 
     if let Some(_) = exit_signal.recv() {
         info!("Quitting the Google Firebase Push Notification service");
