@@ -5,28 +5,23 @@ authors = ["Julius de Bruijn <julius.debruijn@360dialog.com>"]
 build = "build.rs"
 
 [dependencies]
-fcm = { git = "https://github.com/pimeys/fcm-rust", branch = "tokio" }
-hyper = { git = "https://github.com/hyperium/hyper" }
+fcm = { git = "https://github.com/pimeys/fcm-rust" }
+amqp = "0.0.16"
 protobuf = "1.0.22"
 chan-signal = "0.1.6"
 argparse = "0.2.1"
 env_logger = "0.3.3"
 syslog = "3.1.0"
-futures = "0.1.*"
 log = "0.3.6"
 toml = "0.1.30"
 rustc-serialize = "0.3.19"
-tokio-core = "0.1.*"
-tokio-signal = "0.1.2"
 time = "0.1.35"
+hyper = "0.9.13"
 rocksdb = "0.4.1"
 postgres = "0.11"
 r2d2 = "0.7.0"
 r2d2_postgres = "0.10.1"
+retry-after = { git = "https://github.com/pimeys/retry-after" }
 chrono = "0.2"
 prometheus = "0.2"
 lazy_static = "0.1.*"
-
-[dependencies.amqp]
-version = "0.0.20"
-default-features = false

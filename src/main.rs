@@ -3,8 +3,6 @@ extern crate log;
 extern crate env_logger;
 extern crate syslog;
 extern crate hyper;
-extern crate futures;
-extern crate tokio_core;
 
 extern crate fcm;
 extern crate amqp;
@@ -17,8 +15,8 @@ extern crate time;
 extern crate postgres;
 extern crate r2d2;
 extern crate r2d2_postgres;
+extern crate retry_after;
 extern crate chrono;
-extern crate tokio_signal;
 
 #[macro_use]
 extern crate prometheus;
@@ -45,8 +43,9 @@ use argparse::{ArgumentParser, Store};
 use std::thread::{self, JoinHandle};
 use consumer::Consumer;
 use notifier::Notifier;
-use producer::ResponseProducer;
-use futures::sync::{mpsc, oneshot};
+use producer::{FcmData, ResponseProducer};
+use std::sync::mpsc;
+use std::sync::mpsc::{Sender, Receiver};
 use metrics::StatisticsServer;
 use certificate_registry::CertificateRegistry;
 
@@ -72,11 +71,15 @@ fn main() {
     info!("Google Firebase Push Notification service starting up!");
 
     let exit_signal              = notify(&[Signal::INT, Signal::TERM]);
+    let mut number_of_threads    = 1;
     let mut config_file_location = String::from("./config/config.toml");
 
     {
         let mut ap = ArgumentParser::new();
         ap.set_description("Google Firebase Push Notification System");
+        ap.refer(&mut number_of_threads)
+            .add_option(&["-n", "--number_of_threads"], Store,
+                        "Number of worker threads (default: 1)");
         ap.refer(&mut config_file_location)
             .add_option(&["-c", "--config"], Store,
                         "Config file (default: ./config/config.toml)");
@@ -87,69 +90,47 @@ fn main() {
     let certificate_registry = Arc::new(CertificateRegistry::new(config.clone()));
     let control              = Arc::new(AtomicBool::new(true));
 
-    // Consumer to notifier communication
-    let (notifier_tx, notifier_rx) = mpsc::channel(10000);
+    let (tx, rx): (Sender<FcmData>, Receiver<FcmData>) = mpsc::channel();
 
-    // Notifier to response producer communication
-    let (producer_tx, producer_rx) = mpsc::channel(10000);
-
-    // Prometheus statistics server kill-switch
-    let (server_tx, server_rx) = oneshot::channel();
-
-    let mut threads: Vec<JoinHandle<_>> = Vec::new();
-
-    threads.push({
-        let notifier = Notifier::new();
+    let mut threads : Vec<JoinHandle<_>> = (0..number_of_threads).map(|i| {
+        let notifier     = Notifier::new();
+        let consumer = Consumer::new(control.clone(), config.clone(), notifier,
+            tx.clone(), certificate_registry.clone());
 
         thread::spawn(move || {
-            info!("Starting async notifier thread...");
-            notifier.run(notifier_rx, producer_tx);
-            info!("Exiting async notifier thread...");
-        })
-    });
+            info!("Starting consumer #{}", i);
 
-    threads.push({
-        let consumer = Consumer::new(
-            control.clone(),
-            config.clone(),
-            certificate_registry.clone());
-
-        thread::spawn(move || {
-            info!("Starting consumer...");
-
-            if let Err(error) = consumer.consume(notifier_tx) {
+            if let Err(error) = consumer.consume() {
                 error!("Error in consumer: {:?}", error);
             }
 
-            info!("Exiting consumer");
+            info!("Exiting consumer #{}", i);
         })
-    });
+    }).collect();
 
     threads.push({
-        let mut producer = ResponseProducer::new(config.clone());
+        let mut producer = ResponseProducer::new(config.clone(), rx, control.clone());
 
         thread::spawn(move || {
             info!("Starting response producer thread...");
-            producer.run(producer_rx);
+            producer.run();
             info!("Exiting response producer thread...");
         })
     });
 
-    threads.push({
-        thread::spawn(move || {
-            debug!("Starting statistics server...");
-            StatisticsServer::handle(server_rx);
-        })
-    });
+    debug!("Starting statistics server...");
+    let mut listening = StatisticsServer::handle();
 
     if let Some(_) = exit_signal.recv() {
         info!("Quitting the Google Firebase Push Notification service");
 
-        server_tx.complete(());
         control.store(false, Ordering::Relaxed);
+
         for thread in threads {
             thread.thread().unpark();
             thread.join().unwrap();
         }
+
+        listening.close().unwrap();
     }
 }

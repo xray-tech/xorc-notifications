@@ -1,8 +1,7 @@
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
-use futures::Sink;
-use futures::sync::mpsc::Sender;
+use std::sync::mpsc::Sender;
 use std::collections::HashMap;
 use std::thread;
 use amqp::{Session, Channel, Table, Basic, Options};
@@ -10,19 +9,20 @@ use events::push_notification::PushNotification;
 use protobuf::parse_from_bytes;
 use config::Config;
 use hyper::error::Error;
+use notifier::Notifier;
+use producer::FcmData;
 use certificate_registry::{CertificateRegistry, CertificateError};
 use time::precise_time_s;
-use tokio_core::reactor::Core;
-use metrics::CALLBACKS_INFLIGHT;
 
 pub struct Consumer {
     channel: Mutex<Channel>,
     session: Session,
+    notifier: Notifier,
     control: Arc<AtomicBool>,
     config: Arc<Config>,
+    tx: Sender<FcmData>,
     registry: Arc<CertificateRegistry>,
     cache_ttl: f64,
-    hwm: f64,
 }
 
 struct ApiKey {
@@ -40,15 +40,14 @@ impl Drop for Consumer {
 }
 
 impl Consumer {
-    pub fn new(control: Arc<AtomicBool>,
-               config: Arc<Config>,
-               registry: Arc<CertificateRegistry>) -> Consumer {
+    pub fn new(control: Arc<AtomicBool>, config: Arc<Config>, notifier: Notifier,
+               tx: Sender<FcmData>, registry: Arc<CertificateRegistry>) -> Consumer {
         let mut session = Session::new(Options {
-            vhost: config.rabbitmq.vhost.clone(),
-            host: config.rabbitmq.host.clone(),
+            vhost: &config.rabbitmq.vhost,
+            host: &config.rabbitmq.host,
             port: config.rabbitmq.port,
-            login: config.rabbitmq.login.clone(),
-            password: config.rabbitmq.password.clone(), .. Default::default()
+            login: &config.rabbitmq.login,
+            password: &config.rabbitmq.password, .. Default::default()
         }).unwrap();
 
         let mut channel = session.open_channel(1).unwrap();
@@ -82,55 +81,46 @@ impl Consumer {
         Consumer {
             channel: Mutex::new(channel),
             session: session,
+            notifier: notifier,
             control: control,
             config: config,
+            tx: tx,
             registry: registry,
             cache_ttl: 120.0,
-            hwm: 10000.0,
         }
     }
 
-    pub fn consume(&self, notifier_tx: Sender<(Option<String>, PushNotification)>) -> Result<(), Error> {
+    pub fn consume(&self) -> Result<(), Error> {
         let mut certificates: HashMap<String, ApiKey> = HashMap::new();
         let mut channel = self.channel.lock().unwrap();
         let mut changes: u64;
-        let mut core = Core::new().unwrap();
 
         while self.control.load(Ordering::Relaxed) {
             changes = 0;
 
-            if CALLBACKS_INFLIGHT.get() < self.hwm {
-                for result in channel.basic_get(&self.config.rabbitmq.queue, false) {
-                    CALLBACKS_INFLIGHT.inc();
-                    result.ack();
+            for result in channel.basic_get(&self.config.rabbitmq.queue, false) {
+                result.ack();
 
-                    changes = changes + 1;
+                changes = changes + 1;
 
-                    if let Ok(event) = parse_from_bytes::<PushNotification>(&result.body) {
-                        self.update_certificates(&mut certificates, event.get_application_id());
-                        let nx = notifier_tx.clone();
+                if let Ok(event) = parse_from_bytes::<PushNotification>(&result.body) {
+                    self.update_certificates(&mut certificates, event.get_application_id());
 
-                        let task = match certificates.get(event.get_application_id()) {
-                            Some(&ApiKey { key: Some(ref key), timestamp: _ }) =>
-                                nx.send((Some(key.to_string()), event)),
-                            _ =>
-                                nx.send((None, event)),
-                        };
+                    let response = match certificates.get(event.get_application_id()) {
+                        Some(&ApiKey { key: Some(ref key), timestamp: _ }) => Some(self.notifier.send(&event, key)),
+                        _ => None,
+                    };
 
-                        core.run(task).unwrap();
-                    } else {
-                        error!("Broken protobuf data");
-                    }
-
-                    if !self.control.load(Ordering::Relaxed) { break; }
+                    self.tx.send((event, response)).unwrap();
+                } else {
+                    error!("Broken protobuf data");
                 }
 
-                if changes == 0 {
-                    thread::park_timeout(Duration::from_millis(100));
-                }
-            } else {
-                error!("FCM high water mark reached! Waiting a moment before continuing...");
-                thread::park_timeout(Duration::from_millis(1000));
+                if !self.control.load(Ordering::Relaxed) { break; }
+            }
+
+            if changes == 0 {
+                thread::park_timeout(Duration::from_millis(100));
             }
         }
 
