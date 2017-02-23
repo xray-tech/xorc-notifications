@@ -73,6 +73,7 @@ fn main() {
 
     let exit_signal              = notify(&[Signal::INT, Signal::TERM]);
     let mut config_file_location = String::from("./config/config.toml");
+    let mut number_of_threads    = 1;
 
     {
         let mut ap = ArgumentParser::new();
@@ -80,6 +81,9 @@ fn main() {
         ap.refer(&mut config_file_location)
             .add_option(&["-c", "--config"], Store,
                         "Config file (default: ./config/config.toml)");
+        ap.refer(&mut number_of_threads)
+            .add_option(&["-n", "--number_of_consumers"], Store,
+                        "Number of consumer threads");
         ap.parse_args_or_exit();
     }
 
@@ -109,7 +113,7 @@ fn main() {
             })
         });
 
-        for i in 0..3 {
+        for i in 0..number_of_threads {
             threads.push({
                 let consumer = Consumer::new(
                     control.clone(),
