@@ -2,7 +2,7 @@
 name = "fcm"
 version = "0.1.0"
 dependencies = [
- "amqp 0.0.20 (registry+https://github.com/rust-lang/crates.io-index)",
+ "amqp 0.0.20 (git+https://github.com/pimeys/rust-amqp?branch=consumer_clean_exit)",
  "argparse 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "chan-signal 0.1.7 (registry+https://github.com/rust-lang/crates.io-index)",
  "chrono 0.2.25 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -46,7 +46,7 @@ dependencies = [
 [[package]]
 name = "amqp"
 version = "0.0.20"
-source = "registry+https://github.com/rust-lang/crates.io-index"
+source = "git+https://github.com/pimeys/rust-amqp?branch=consumer_clean_exit#4b4596d9c3f6b2a7ae55c983be636cc0f19bfeb1"
 dependencies = [
  "bit-vec 0.4.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "byteorder 0.5.3 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -868,7 +868,7 @@ dependencies = [
 [metadata]
 "checksum advapi32-sys 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)" = "e06588080cb19d0acb6739808aafa5f26bfb2ca015b2b6370028b44cf7cb8a9a"
 "checksum aho-corasick 0.5.3 (registry+https://github.com/rust-lang/crates.io-index)" = "ca972c2ea5f742bfce5687b9aef75506a764f61d37f8f649047846a9686ddb66"
-"checksum amqp 0.0.20 (registry+https://github.com/rust-lang/crates.io-index)" = "713e6aed2e9e8b34b076af7bc38f5d3e5964e27a12b91fde31b9ef2d1fcd070e"
+"checksum amqp 0.0.20 (git+https://github.com/pimeys/rust-amqp?branch=consumer_clean_exit)" = "<none>"
 "checksum antidote 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)" = "34fde25430d87a9388dadbe6e34d7f72a462c8b43ac8d309b42b0a8505d7e2a5"
 "checksum argparse 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)" = "37bb99f5e39ee8b23b6e227f5b8f024207e8616f44aa4b8c76ecd828011667ef"
 "checksum base64 0.4.0 (registry+https://github.com/rust-lang/crates.io-index)" = "065a0ce220ab84d0b6d5ae3e7bb77232209519c366f51f946fe28c19e84989d0"

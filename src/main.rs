@@ -134,7 +134,7 @@ fn main() {
         }
 
         threads.push({
-            let mut producer = ResponseProducer::new(config.clone());
+            let mut producer = ResponseProducer::new(config.clone(), control.clone());
 
             thread::spawn(move || {
                 info!("Starting response producer thread...");

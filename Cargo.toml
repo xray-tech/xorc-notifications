@@ -28,5 +28,6 @@ prometheus = "0.2"
 lazy_static = "0.1.*"
 
 [dependencies.amqp]
-version = "0.0.20"
+git = "https://github.com/pimeys/rust-amqp"
+branch = "consumer_clean_exit"
 default-features = false

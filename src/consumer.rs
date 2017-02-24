@@ -1,28 +1,23 @@
 use std::sync::{Arc, Mutex};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Duration;
-use futures::Sink;
+use std::sync::atomic::AtomicBool;
+use futures::{Sink, Future};
 use futures::sync::mpsc::Sender;
 use std::collections::HashMap;
-use std::thread;
-use amqp::{Session, Channel, Table, Basic, Options};
+use amqp::{Session, Channel, Table, Basic, Options, Consumer as AmqpConsumer};
+use amqp::protocol::basic;
 use events::push_notification::PushNotification;
 use protobuf::parse_from_bytes;
 use config::Config;
 use hyper::error::Error;
 use certificate_registry::{CertificateRegistry, CertificateError};
 use time::precise_time_s;
-use tokio_core::reactor::Core;
 use metrics::CALLBACKS_INFLIGHT;
 
 pub struct Consumer {
     channel: Mutex<Channel>,
     session: Session,
-    control: Arc<AtomicBool>,
     config: Arc<Config>,
     registry: Arc<CertificateRegistry>,
-    cache_ttl: f64,
-    hwm: f64,
 }
 
 struct ApiKey {
@@ -39,6 +34,83 @@ impl Drop for Consumer {
     }
 }
 
+struct FcmConsumer {
+    registry: Arc<CertificateRegistry>,
+    notifier_tx: Sender<(Option<String>, PushNotification)>,
+    certificates: HashMap<String, ApiKey>,
+    cache_ttl: f64,
+}
+
+impl FcmConsumer {
+    pub fn new(notifier_tx: Sender<(Option<String>, PushNotification)>, registry: Arc<CertificateRegistry>) -> FcmConsumer {
+        FcmConsumer {
+            notifier_tx: notifier_tx,
+            certificates: HashMap::new(),
+            registry: registry,
+            cache_ttl: 120.0,
+        }
+    }
+
+    fn update_certificates(&mut self, application_id: &str) {
+        let fetch_key = |api_key: &str| {
+            ApiKey {
+                key: Some(String::from(api_key)),
+                timestamp: precise_time_s(),
+            }
+        };
+
+        let add_key = move |result: Result<ApiKey, CertificateError>, certificates: &mut HashMap<String, ApiKey>| {
+            match result {
+                Ok(api_key) => {
+                    certificates.insert(String::from(application_id), api_key);
+                },
+                Err(err) => {
+                    error!("Error when fetching certificate for {}: {:?}", application_id, err);
+
+                    certificates.insert(String::from(application_id), ApiKey {
+                        key: None,
+                        timestamp: precise_time_s(),
+                    });
+                },
+            }
+        };
+
+        if self.certificates.get(application_id).is_some() && self.is_expired(self.certificates.get(application_id).unwrap()) {
+            self.certificates.remove(application_id);
+            add_key(self.registry.fetch(application_id, fetch_key), &mut self.certificates);
+        } else if self.certificates.get(application_id).is_none() {
+            add_key(self.registry.fetch(application_id, fetch_key), &mut self.certificates);
+        }
+    }
+
+    fn is_expired(&self, key: &ApiKey) -> bool {
+        precise_time_s() - key.timestamp >= self.cache_ttl
+    }
+}
+
+impl AmqpConsumer for FcmConsumer {
+    fn handle_delivery(&mut self, channel: &mut Channel, deliver: basic::Deliver,
+                       _headers: basic::BasicProperties, body: Vec<u8>) {
+        channel.basic_ack(deliver.delivery_tag, false).unwrap();
+
+        if let Ok(event) = parse_from_bytes::<PushNotification>(&body) {
+            CALLBACKS_INFLIGHT.inc();
+
+            self.update_certificates(event.get_application_id());
+            let nx = self.notifier_tx.clone();
+
+            match self.certificates.get(event.get_application_id()) {
+                Some(&ApiKey { key: Some(ref key), timestamp: _ }) =>
+                    nx.send((Some(key.to_string()), event)).wait().unwrap(),
+                _ =>
+                    nx.send((None, event)).wait().unwrap(),
+            };
+        } else {
+            error!("Broken protobuf data");
+        }
+    }
+}
+
 impl Consumer {
     pub fn new(control: Arc<AtomicBool>,
                config: Arc<Config>,
@@ -49,7 +121,7 @@ impl Consumer {
             port: config.rabbitmq.port,
             login: config.rabbitmq.login.clone(),
             password: config.rabbitmq.password.clone(), .. Default::default()
-        }).unwrap();
+        }, control.clone()).unwrap();
 
         let mut channel = session.open_channel(1).unwrap();
 
@@ -82,95 +154,31 @@ impl Consumer {
         Consumer {
             channel: Mutex::new(channel),
             session: session,
-            control: control,
             config: config,
             registry: registry,
-            cache_ttl: 120.0,
-            hwm: 10000.0,
         }
     }
 
     pub fn consume(&self, notifier_tx: Sender<(Option<String>, PushNotification)>) -> Result<(), Error> {
-        let mut certificates: HashMap<String, ApiKey> = HashMap::new();
         let mut channel = self.channel.lock().unwrap();
-        let mut changes: u64;
-        let mut core = Core::new().unwrap();
+        let consumer = FcmConsumer::new(notifier_tx, self.registry.clone());
 
-        while self.control.load(Ordering::Relaxed) {
-            changes = 0;
+        channel.basic_prefetch(100).ok().expect("failed to prefetch");
 
-            if CALLBACKS_INFLIGHT.get() < self.hwm {
-                for result in channel.basic_get(&self.config.rabbitmq.queue, false) {
-                    CALLBACKS_INFLIGHT.inc();
-                    result.ack();
+        let consumer_name = channel.basic_consume(consumer,
+                                                  &*self.config.rabbitmq.queue,
+                                                  "apns2_consumer",
+                                                  true,  // no local
+                                                  false, // no ack
+                                                  false, // exclusive
+                                                  false, // nowait
+                                                  Table::new());
 
-                    changes = changes + 1;
+        info!("Starting consumer {:?}", consumer_name);
 
-                    if let Ok(event) = parse_from_bytes::<PushNotification>(&result.body) {
-                        self.update_certificates(&mut certificates, event.get_application_id());
-                        let nx = notifier_tx.clone();
-
-                        let task = match certificates.get(event.get_application_id()) {
-                            Some(&ApiKey { key: Some(ref key), timestamp: _ }) =>
-                                nx.send((Some(key.to_string()), event)),
-                            _ =>
-                                nx.send((None, event)),
-                        };
-
-                        core.run(task).unwrap();
-                    } else {
-                        error!("Broken protobuf data");
-                    }
-
-                    if !self.control.load(Ordering::Relaxed) { break; }
-                }
-
-                if changes == 0 {
-                    thread::park_timeout(Duration::from_millis(100));
-                }
-            } else {
-                error!("FCM high water mark reached! Waiting a moment before continuing...");
-                thread::park_timeout(Duration::from_millis(1000));
-            }
-        }
+        channel.start_consuming();
 
         Ok(())
-    }
-
-    fn update_certificates(&self, certificates: &mut HashMap<String, ApiKey>, application_id: &str) {
-        let fetch_key = |api_key: &str| {
-            ApiKey {
-                key: Some(String::from(api_key)),
-                timestamp: precise_time_s(),
-            }
-        };
-
-        let add_key = move |result: Result<ApiKey, CertificateError>, certificates: &mut HashMap<String, ApiKey>| {
-            match result {
-                Ok(api_key) => {
-                    certificates.insert(String::from(application_id), api_key);
-                },
-                Err(err) => {
-                    error!("Error when fetching certificate for {}: {:?}", application_id, err);
-
-                    certificates.insert(String::from(application_id), ApiKey {
-                        key: None,
-                        timestamp: precise_time_s(),
-                    });
-                },
-            }
-        };
-
-        if certificates.get(application_id).is_some() && self.is_expired(certificates.get(application_id).unwrap()) {
-            certificates.remove(application_id);
-            add_key(self.registry.fetch(application_id, fetch_key), certificates);
-        } else if certificates.get(application_id).is_none() {
-            add_key(self.registry.fetch(application_id, fetch_key), certificates);
-        }
-    }
-
-    fn is_expired(&self, key: &ApiKey) -> bool {
-        precise_time_s() - key.timestamp >= self.cache_ttl
     }
 }
 

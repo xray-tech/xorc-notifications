@@ -13,6 +13,7 @@ use futures::sync::mpsc::Receiver;
 use futures::Stream;
 use protobuf::core::Message;
 use metrics::{CALLBACKS_COUNTER, CALLBACKS_INFLIGHT};
+use std::sync::atomic::AtomicBool;
 
 pub type FcmData = (PushNotification, Option<Result<FcmResponse, FcmError>>);
 
@@ -30,7 +31,7 @@ impl Drop for ResponseProducer {
 }
 
 impl ResponseProducer {
-    pub fn new(config: Arc<Config>) -> ResponseProducer {
+    pub fn new(config: Arc<Config>, control: Arc<AtomicBool>) -> ResponseProducer {
         let options = Options {
             vhost: config.rabbitmq.vhost.clone(),
             host: config.rabbitmq.host.clone(),
@@ -39,7 +40,7 @@ impl ResponseProducer {
             password: config.rabbitmq.password.clone(), .. Default::default()
         };
 
-        let mut session = Session::new(options).unwrap();
+        let mut session = Session::new(options, control.clone()).unwrap();
         let mut channel = session.open_channel(1).unwrap();
 
         channel.exchange_declare(
