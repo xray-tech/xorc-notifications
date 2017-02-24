@@ -191,7 +191,7 @@ dependencies = [
 [[package]]
 name = "fcm"
 version = "0.1.1"
-source = "git+https://github.com/pimeys/fcm-rust?branch=tokio#d4a6a930357ad9037db6fbb177ef6a76567d54c8"
+source = "git+https://github.com/pimeys/fcm-rust?branch=tokio#3d089dc742c47001808c494078035b602733e1fe"
 dependencies = [
  "futures 0.1.10 (registry+https://github.com/rust-lang/crates.io-index)",
  "hyper 0.11.0-a.0 (git+https://github.com/hyperium/hyper)",
@@ -256,7 +256,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 [[package]]
 name = "hyper"
 version = "0.11.0-a.0"
-source = "git+https://github.com/hyperium/hyper#a6f7f274353f1937d0ebdf5a94d529409901e1ec"
+source = "git+https://github.com/hyperium/hyper#6eb07539214644fbcfff6e950bfbc688bf4764c2"
 dependencies = [
  "base64 0.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "futures 0.1.10 (registry+https://github.com/rust-lang/crates.io-index)",
