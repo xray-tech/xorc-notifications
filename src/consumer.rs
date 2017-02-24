@@ -91,22 +91,27 @@ impl FcmConsumer {
 impl AmqpConsumer for FcmConsumer {
     fn handle_delivery(&mut self, channel: &mut Channel, deliver: basic::Deliver,
                        _headers: basic::BasicProperties, body: Vec<u8>) {
-        channel.basic_ack(deliver.delivery_tag, false).unwrap();
+        if CALLBACKS_INFLIGHT.get() < 10000.0 {
+            channel.basic_ack(deliver.delivery_tag, false).unwrap();
 
-        if let Ok(event) = parse_from_bytes::<PushNotification>(&body) {
-            CALLBACKS_INFLIGHT.inc();
+            if let Ok(event) = parse_from_bytes::<PushNotification>(&body) {
+                CALLBACKS_INFLIGHT.inc();
 
-            self.update_certificates(event.get_application_id());
-            let nx = self.notifier_tx.clone();
+                self.update_certificates(event.get_application_id());
+                let nx = self.notifier_tx.clone();
 
-            match self.certificates.get(event.get_application_id()) {
-                Some(&ApiKey { key: Some(ref key), timestamp: _ }) =>
-                    nx.send((Some(key.to_string()), event)).wait().unwrap(),
-                _ =>
-                    nx.send((None, event)).wait().unwrap(),
-            };
+                match self.certificates.get(event.get_application_id()) {
+                    Some(&ApiKey { key: Some(ref key), timestamp: _ }) =>
+                        nx.send((Some(key.to_string()), event)).wait().unwrap(),
+                    _ =>
+                        nx.send((None, event)).wait().unwrap(),
+                };
+            } else {
+                error!("Broken protobuf data");
+            }
         } else {
-            error!("Broken protobuf data");
+            error!("ERROR: Too many callbacks in-flight, requeuing");
+            channel.basic_nack(deliver.delivery_tag, false, true).unwrap();
         }
     }
 }
