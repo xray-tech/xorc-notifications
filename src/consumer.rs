@@ -102,7 +102,6 @@ impl Consumer {
             if CALLBACKS_INFLIGHT.get() < self.hwm {
                 for result in channel.basic_get(&self.config.rabbitmq.queue, false) {
                     CALLBACKS_INFLIGHT.inc();
-                    result.ack();
 
                     changes = changes + 1;
 
