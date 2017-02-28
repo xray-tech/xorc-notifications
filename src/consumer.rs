@@ -96,7 +96,7 @@ impl Consumer {
 
         let consumer_name = channel.basic_consume(consumer,
                                                   &*self.config.rabbitmq.queue,
-                                                  "apns2_consumer",
+                                                  "fcm_consumer",
                                                   true,  // no local
                                                   false, // no ack
                                                   false, // exclusive
