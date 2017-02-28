@@ -2,22 +2,55 @@ use fcm::*;
 use events::push_notification::PushNotification;
 use events::google_notification::GoogleNotification_Priority;
 use std::collections::HashMap;
+use tokio_core::reactor::Core;
+use futures::sync::mpsc::{Sender, Receiver};
+use futures::{Future, Stream, Sink};
+use producer::FcmData;
 use metrics::RESPONSE_TIMES_HISTOGRAM;
 
-pub struct Notifier {
-    fcm_client: Client,
-}
+pub struct Notifier {}
 
 impl Notifier {
     pub fn new() -> Notifier {
-        Notifier {
-            fcm_client: Client::new(),
-        }
+        Notifier {}
     }
 
-    pub fn send(&self, pn: &PushNotification, api_key: &str) -> Result<FcmResponse, FcmError> {
+    pub fn run(&self, consumer_rx: Receiver<(Option<String>, PushNotification)>, producer_tx: Sender<FcmData>) {
+        let mut core = Core::new().unwrap();
+        let handle = core.handle();
+        let client = Client::new(&handle);
+
+        let sender = consumer_rx.for_each(|(api_key, event)| {
+            let tx = producer_tx.clone();
+
+            match api_key {
+                Some(ref key) => {
+                    let message = Self::build_message(&event, key);
+                    let timer = RESPONSE_TIMES_HISTOGRAM.start_timer();
+
+                    let work = client.send(message).then(|res| {
+                        timer.observe_duration();
+                        tx.send((event, Some(res)))
+                    }).then(|_| Ok(()));
+
+                    handle.spawn(work);
+                },
+                None => {
+                    let work = tx.send((event, None)).then(|_| Ok(()));
+
+                    handle.spawn(work);
+                }
+            }
+
+            Ok(())
+        });
+
+        core.run(sender).unwrap();
+    }
+
+    fn build_message(pn: &PushNotification, api_key: &str) -> Message {
         let notification = pn.get_google();
-        let mut message  = MessageBuilder::new(pn.get_device_token());
+        let mut message  = MessageBuilder::new(api_key, pn.get_device_token());
 
         if notification.has_localized() {
             let localized   = notification.get_localized();
@@ -100,10 +133,6 @@ impl Notifier {
             message.dry_run(notification.get_dry_run());
         }
 
-        let timer = RESPONSE_TIMES_HISTOGRAM.start_timer();
-        let response = self.fcm_client.send(message.finalize(), api_key);
-
-        timer.observe_duration();
-        response
+        message.finalize()
     }
 }

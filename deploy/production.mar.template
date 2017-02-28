@@ -1,7 +1,7 @@
 {
   "id": "push-notifications/fcm/production",
-  "instances": 3,
-  "cpus": 1,
+  "instances": 6,
+  "cpus": 0.5,
   "mem": 512,
   "labels": {
     "collectd_app": "fcm-production",

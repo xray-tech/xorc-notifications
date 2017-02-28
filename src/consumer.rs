@@ -1,28 +1,29 @@
 use std::sync::{Arc, Mutex};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Duration;
-use std::sync::mpsc::Sender;
+use std::sync::atomic::AtomicBool;
 use std::collections::HashMap;
-use std::thread;
-use amqp::{Session, Channel, Table, Basic, Options};
-use events::push_notification::PushNotification;
+use time::precise_time_s;
+use thread::park_timeout;
+use std::time::Duration;
+
+use futures::{Sink, Future};
+use futures::sync::mpsc::Sender;
+
+use amqp::{Session, Channel, Table, Basic, Options, Consumer as AmqpConsumer};
+use amqp::protocol::basic;
+
 use protobuf::parse_from_bytes;
 use config::Config;
 use hyper::error::Error;
-use notifier::Notifier;
-use producer::FcmData;
+
+use metrics::CALLBACKS_INFLIGHT;
 use certificate_registry::{CertificateRegistry, CertificateError};
-use time::precise_time_s;
+use events::push_notification::PushNotification;
 
 pub struct Consumer {
     channel: Mutex<Channel>,
     session: Session,
-    notifier: Notifier,
-    control: Arc<AtomicBool>,
     config: Arc<Config>,
-    tx: Sender<FcmData>,
     registry: Arc<CertificateRegistry>,
-    cache_ttl: f64,
 }
 
 struct ApiKey {
@@ -40,15 +41,16 @@ impl Drop for Consumer {
 }
 
 impl Consumer {
-    pub fn new(control: Arc<AtomicBool>, config: Arc<Config>, notifier: Notifier,
-               tx: Sender<FcmData>, registry: Arc<CertificateRegistry>) -> Consumer {
+    pub fn new(control: Arc<AtomicBool>,
+               config: Arc<Config>,
+               registry: Arc<CertificateRegistry>) -> Consumer {
         let mut session = Session::new(Options {
-            vhost: &config.rabbitmq.vhost,
-            host: &config.rabbitmq.host,
+            vhost: config.rabbitmq.vhost.clone(),
+            host: config.rabbitmq.host.clone(),
             port: config.rabbitmq.port,
-            login: &config.rabbitmq.login,
-            password: &config.rabbitmq.password, .. Default::default()
-        }).unwrap();
+            login: config.rabbitmq.login.clone(),
+            password: config.rabbitmq.password.clone(), .. Default::default()
+        }, control.clone()).unwrap();
 
         let mut channel = session.open_channel(1).unwrap();
 
@@ -81,53 +83,51 @@ impl Consumer {
         Consumer {
             channel: Mutex::new(channel),
             session: session,
-            notifier: notifier,
-            control: control,
             config: config,
-            tx: tx,
+            registry: registry,
+        }
+    }
+
+    pub fn consume(&self, notifier_tx: Sender<(Option<String>, PushNotification)>) -> Result<(), Error> {
+        let mut channel = self.channel.lock().unwrap();
+        let consumer = FcmConsumer::new(notifier_tx, self.registry.clone());
+
+        channel.basic_prefetch(100).ok().expect("failed to prefetch");
+
+        let consumer_name = channel.basic_consume(consumer,
+                                                  &*self.config.rabbitmq.queue,
+                                                  "fcm_consumer",
+                                                  true,  // no local
+                                                  false, // no ack
+                                                  false, // exclusive
+                                                  false, // nowait
+                                                  Table::new());
+
+        info!("Starting consumer {:?}", consumer_name);
+        channel.start_consuming();
+
+        Ok(())
+    }
+}
+
+struct FcmConsumer {
+    registry: Arc<CertificateRegistry>,
+    notifier_tx: Sender<(Option<String>, PushNotification)>,
+    certificates: HashMap<String, ApiKey>,
+    cache_ttl: f64,
+}
+
+impl FcmConsumer {
+    pub fn new(notifier_tx: Sender<(Option<String>, PushNotification)>, registry: Arc<CertificateRegistry>) -> FcmConsumer {
+        FcmConsumer {
+            notifier_tx: notifier_tx,
+            certificates: HashMap::new(),
             registry: registry,
             cache_ttl: 120.0,
         }
     }
 
-    pub fn consume(&self) -> Result<(), Error> {
-        let mut certificates: HashMap<String, ApiKey> = HashMap::new();
-        let mut channel = self.channel.lock().unwrap();
-        let mut changes: u64;
-
-        while self.control.load(Ordering::Relaxed) {
-            changes = 0;
-
-            for result in channel.basic_get(&self.config.rabbitmq.queue, false) {
-                result.ack();
-
-                changes = changes + 1;
-
-                if let Ok(event) = parse_from_bytes::<PushNotification>(&result.body) {
-                    self.update_certificates(&mut certificates, event.get_application_id());
-
-                    let response = match certificates.get(event.get_application_id()) {
-                        Some(&ApiKey { key: Some(ref key), timestamp: _ }) => Some(self.notifier.send(&event, key)),
-                        _ => None,
-                    };
-
-                    self.tx.send((event, response)).unwrap();
-                } else {
-                    error!("Broken protobuf data");
-                }
-
-                if !self.control.load(Ordering::Relaxed) { break; }
-            }
-
-            if changes == 0 {
-                thread::park_timeout(Duration::from_millis(100));
-            }
-        }
-
-        Ok(())
-    }
-
-    fn update_certificates(&self, certificates: &mut HashMap<String, ApiKey>, application_id: &str) {
+    fn update_certificates(&mut self, application_id: &str) {
         let fetch_key = |api_key: &str| {
             ApiKey {
                 key: Some(String::from(api_key)),
@@ -151,11 +151,11 @@ impl Consumer {
             }
         };
 
-        if certificates.get(application_id).is_some() && self.is_expired(certificates.get(application_id).unwrap()) {
-            certificates.remove(application_id);
-            add_key(self.registry.fetch(application_id, fetch_key), certificates);
-        } else if certificates.get(application_id).is_none() {
-            add_key(self.registry.fetch(application_id, fetch_key), certificates);
+        if self.certificates.get(application_id).is_some() && self.is_expired(self.certificates.get(application_id).unwrap()) {
+            self.certificates.remove(application_id);
+            add_key(self.registry.fetch(application_id, fetch_key), &mut self.certificates);
+        } else if self.certificates.get(application_id).is_none() {
+            add_key(self.registry.fetch(application_id, fetch_key), &mut self.certificates);
         }
     }
 
@@ -164,3 +164,31 @@ impl Consumer {
     }
 }
 
+impl AmqpConsumer for FcmConsumer {
+    fn handle_delivery(&mut self, channel: &mut Channel, deliver: basic::Deliver,
+                       _headers: basic::BasicProperties, body: Vec<u8>) {
+        if CALLBACKS_INFLIGHT.get() < 10000.0 {
+            channel.basic_ack(deliver.delivery_tag, false).unwrap();
+
+            if let Ok(event) = parse_from_bytes::<PushNotification>(&body) {
+                CALLBACKS_INFLIGHT.inc();
+
+                self.update_certificates(event.get_application_id());
+                let nx = self.notifier_tx.clone();
+
+                match self.certificates.get(event.get_application_id()) {
+                    Some(&ApiKey { key: Some(ref key), timestamp: _ }) =>
+                        nx.send((Some(key.to_string()), event)).wait().unwrap(),
+                    _ =>
+                        nx.send((None, event)).wait().unwrap(),
+                };
+            } else {
+                error!("Broken protobuf data");
+            }
+        } else {
+            error!("ERROR: Too many callbacks in-flight, requeuing");
+            park_timeout(Duration::from_millis(1000));
+            channel.basic_nack(deliver.delivery_tag, false, true).unwrap();
+        }
+    }
+}
