@@ -34,6 +34,76 @@ impl Drop for Consumer {
     }
 }
 
+impl Consumer {
+    pub fn new(control: Arc<AtomicBool>,
+               config: Arc<Config>,
+               registry: Arc<CertificateRegistry>) -> Consumer {
+        let mut session = Session::new(Options {
+            vhost: config.rabbitmq.vhost.clone(),
+            host: config.rabbitmq.host.clone(),
+            port: config.rabbitmq.port,
+            login: config.rabbitmq.login.clone(),
+            password: config.rabbitmq.password.clone(), .. Default::default()
+        }, control.clone()).unwrap();
+
+        let mut channel = session.open_channel(1).unwrap();
+
+        channel.queue_declare(
+            &*config.rabbitmq.queue,
+            false, // passive
+            true,  // durable
+            false, // exclusive
+            false, // auto_delete
+            false, // nowait
+            Table::new()).unwrap();
+
+        channel.exchange_declare(
+            &*config.rabbitmq.exchange,
+            &*config.rabbitmq.exchange_type,
+            false, // passive
+            true,  // durable
+            false, // auto_delete
+            false, // internal
+            false, // nowait
+            Table::new()).unwrap();
+
+        channel.queue_bind(
+            &*config.rabbitmq.queue,
+            &*config.rabbitmq.exchange,
+            &*config.rabbitmq.routing_key,
+            false, // nowait
+            Table::new()).unwrap();
+
+        Consumer {
+            channel: Mutex::new(channel),
+            session: session,
+            config: config,
+            registry: registry,
+        }
+    }
+
+    pub fn consume(&self, notifier_tx: Sender<(Option<String>, PushNotification)>) -> Result<(), Error> {
+        let mut channel = self.channel.lock().unwrap();
+        let consumer = FcmConsumer::new(notifier_tx, self.registry.clone());
+
+        channel.basic_prefetch(100).ok().expect("failed to prefetch");
+
+        let consumer_name = channel.basic_consume(consumer,
+                                                  &*self.config.rabbitmq.queue,
+                                                  "apns2_consumer",
+                                                  true,  // no local
+                                                  false, // no ack
+                                                  false, // exclusive
+                                                  false, // nowait
+                                                  Table::new());
+
+        info!("Starting consumer {:?}", consumer_name);
+        channel.start_consuming();
+
+        Ok(())
+    }
+}
+
 struct FcmConsumer {
     registry: Arc<CertificateRegistry>,
     notifier_tx: Sender<(Option<String>, PushNotification)>,
@@ -115,75 +185,3 @@ impl AmqpConsumer for FcmConsumer {
         }
     }
 }
-
-impl Consumer {
-    pub fn new(control: Arc<AtomicBool>,
-               config: Arc<Config>,
-               registry: Arc<CertificateRegistry>) -> Consumer {
-        let mut session = Session::new(Options {
-            vhost: config.rabbitmq.vhost.clone(),
-            host: config.rabbitmq.host.clone(),
-            port: config.rabbitmq.port,
-            login: config.rabbitmq.login.clone(),
-            password: config.rabbitmq.password.clone(), .. Default::default()
-        }, control.clone()).unwrap();
-
-        let mut channel = session.open_channel(1).unwrap();
-
-        channel.queue_declare(
-            &*config.rabbitmq.queue,
-            false, // passive
-            true,  // durable
-            false, // exclusive
-            false, // auto_delete
-            false, // nowait
-            Table::new()).unwrap();
-
-        channel.exchange_declare(
-            &*config.rabbitmq.exchange,
-            &*config.rabbitmq.exchange_type,
-            false, // passive
-            true,  // durable
-            false, // auto_delete
-            false, // internal
-            false, // nowait
-            Table::new()).unwrap();
-
-        channel.queue_bind(
-            &*config.rabbitmq.queue,
-            &*config.rabbitmq.exchange,
-            &*config.rabbitmq.routing_key,
-            false, // nowait
-            Table::new()).unwrap();
-
-        Consumer {
-            channel: Mutex::new(channel),
-            session: session,
-            config: config,
-            registry: registry,
-        }
-    }
-
-    pub fn consume(&self, notifier_tx: Sender<(Option<String>, PushNotification)>) -> Result<(), Error> {
-        let mut channel = self.channel.lock().unwrap();
-        let consumer = FcmConsumer::new(notifier_tx, self.registry.clone());
-
-        channel.basic_prefetch(100).ok().expect("failed to prefetch");
-
-        let consumer_name = channel.basic_consume(consumer,
-                                                  &*self.config.rabbitmq.queue,
-                                                  "apns2_consumer",
-                                                  true,  // no local
-                                                  false, // no ack
-                                                  false, // exclusive
-                                                  false, // nowait
-                                                  Table::new());
-
-        info!("Starting consumer {:?}", consumer_name);
-
-        channel.start_consuming();
-
-        Ok(())
-    }
-}
-
