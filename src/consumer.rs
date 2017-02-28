@@ -1,17 +1,23 @@
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::AtomicBool;
+use std::collections::HashMap;
+use time::precise_time_s;
+use thread::park_timeout;
+use std::time::Duration;
+
 use futures::{Sink, Future};
 use futures::sync::mpsc::Sender;
-use std::collections::HashMap;
+
 use amqp::{Session, Channel, Table, Basic, Options, Consumer as AmqpConsumer};
 use amqp::protocol::basic;
-use events::push_notification::PushNotification;
+
 use protobuf::parse_from_bytes;
 use config::Config;
 use hyper::error::Error;
-use certificate_registry::{CertificateRegistry, CertificateError};
-use time::precise_time_s;
+
 use metrics::CALLBACKS_INFLIGHT;
+use certificate_registry::{CertificateRegistry, CertificateError};
+use events::push_notification::PushNotification;
 
 pub struct Consumer {
     channel: Mutex<Channel>,
@@ -181,6 +187,7 @@ impl AmqpConsumer for FcmConsumer {
             }
         } else {
             error!("ERROR: Too many callbacks in-flight, requeuing");
+            park_timeout(Duration::from_millis(1000));
             channel.basic_nack(deliver.delivery_tag, false, true).unwrap();
         }
     }
