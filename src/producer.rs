@@ -37,14 +37,14 @@ impl Drop for ResponseProducer {
 impl ResponseProducer {
     pub fn new(config: Arc<Config>, rx: Receiver<ApnsResponse>, control: Arc<AtomicBool>) -> ResponseProducer {
         let options = Options {
-            vhost: &config.rabbitmq.vhost,
-            host: &config.rabbitmq.host,
+            vhost: config.rabbitmq.vhost.clone(),
+            host: config.rabbitmq.host.clone(),
             port: config.rabbitmq.port,
-            login: &config.rabbitmq.login,
-            password: &config.rabbitmq.password, .. Default::default()
+            login: config.rabbitmq.login.clone(),
+            password: config.rabbitmq.password.clone(), .. Default::default()
         };
 
-        let mut session = Session::new(options).unwrap();
+        let mut session = Session::new(options, control.clone()).unwrap();
         let mut channel = session.open_channel(1).unwrap();
 
         channel.exchange_declare(

@@ -93,12 +93,13 @@ fn main() {
     let (tx_response, rx_response): (Sender<ApnsResponse>, Receiver<ApnsResponse>) = mpsc::channel();
 
     let mut threads : Vec<JoinHandle<_>> = (0..number_of_threads).map(|i| {
-        let mut consumer = Consumer::new(control.clone(), config.clone(), certificate_registry.clone(), tx_response.clone());
+        let mut consumer = Consumer::new(control.clone(), config.clone(), certificate_registry.clone());
+        let tx = tx_response.clone();
 
         thread::spawn(move || {
             info!("Starting consumer #{}", i);
 
-            if let Err(error) = consumer.consume() {
+            if let Err(error) = consumer.consume(tx) {
                 error!("Error in consumer: {:?}", error);
             }
 
