@@ -6,7 +6,6 @@ build = "build.rs"
 
 [dependencies]
 apns2 = { git = "https://github.com/pimeys/apns2"}
-amqp = "0.0.16"
 protobuf = "1.2.1"
 chan-signal = "0.1.6"
 argparse = "0.2.1"
@@ -26,3 +25,8 @@ lazy_static = "0.1.*"
 version = "0.11"
 default-features = true
 features = ["time"]
+
+[dependencies.amqp]
+git = "https://github.com/pimeys/rust-amqp"
+branch = "consumer_clean_exit"
+default-features = false
