@@ -1,0 +1,20 @@
+[postgres]
+uri = "postgres://crm_staging:oophu9gaisheequoo4uP@pgbouncer.service.consul:46432/crm_staging"
+cache_ttl = 10
+pool_size = 3
+min_idle = 2
+idle_timeout = 90000
+max_lifetime = 1800000
+
+[rabbitmq]
+queue = "ha.webpush.queue"
+exchange = "ha.push-notifications"
+exchange_type = "topic"
+response_exchange = "ha.push-notification-responses"
+rgoogleesponse_exchange_type = "topic"
+routing_key = "web"
+vhost = "/staging"
+host = "rabbitmq.service.consul"
+port = 5672
+login = "push-notification-stg"
+password = "yie7oaBo2l"

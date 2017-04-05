@@ -1,0 +1,4 @@
+target
+config/config.toml
+src/events/*
+!src/events/mod.rs
