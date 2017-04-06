@@ -1,26 +1,27 @@
-this.build = fileloader.fromgit('build', 'git@bitbucket.org:360dialog-berlin/jenkins-scripts.git', 'master', 'git', '')
+def build = fileLoader.fromGit('build', 'git@bitbucket.org:360dialog-berlin/jenkins-scripts.git', 'master', 'git', '')
 
 node('master') {
   build.start { ->
-    stage 'checkout'
+    stage 'Checkout'
     checkout scm
-    stage 'submodule update'
+    stage 'Submodule update'
     sh "git submodule update --init"
-    stage "create the binary"
+    stage "Create the binary"
     sh "cargo build --release"
 
-    job_name = env.job_name.replacefirst('.+/', '')
+    job_name = env.JOB_NAME.replaceFirst('.+/', '')
 
     if (job_name == "master") {
-      stage "upload binary to repository"
-      sh "stage=production make upload"
-      stage "deployment"
-      build.deploy("stage=production make auto_update")
+      stage "Upload binary to repository"
+      sh "STAGE=production make upload"
+      stage "Deployment"
+      build.deploy("STAGE=production make auto_update")
     } else if (job_name == "develop") {
-      stage "upload binary to repository"
+      stage "Upload binary to repository"
       sh "make upload"
-      stage "deployment"
+      stage "Deployment"
       build.deploy("make auto_update")
     }
   }
 }
+
