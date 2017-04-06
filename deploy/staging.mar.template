@@ -1,11 +1,11 @@
 {
-  "id": "push-notifications/web/staging",
+  "id": "push-notifications/web-push/staging",
   "instances": 1,
   "cpus": 0.1,
   "mem": 20,
   "labels": {
-    "collectd_app": "web-staging",
-    "overrideTaskName": "web-staging",
+    "collectd_app": "web-push-staging",
+    "overrideTaskName": "web-push-staging",
     "commit_id": "$commit"
   },
   "constraints": [
@@ -29,7 +29,7 @@
   "cmd": "./fcm-$commit -n 1 -c /configs/staging/web_push/staging.toml",
   "fetch": [
     {
-      "uri": "http://artifactory.service.consul:8081/artifactory/web_push/staging/fcm-$commit",
+      "uri": "http://artifactory.service.consul:8081/artifactory/web_push/staging/web-push-$commit",
       "executable": true,
       "extract": false
     }
