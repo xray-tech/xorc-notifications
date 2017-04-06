@@ -1,4 +1,4 @@
-def build = fileloader.fromgit('build', 'git@bitbucket.org:360dialog-berlin/jenkins-scripts.git', 'master', 'git', '')
+this.build = fileloader.fromgit('build', 'git@bitbucket.org:360dialog-berlin/jenkins-scripts.git', 'master', 'git', '')
 
 node('master') {
   build.start { ->
