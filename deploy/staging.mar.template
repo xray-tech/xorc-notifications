@@ -26,7 +26,7 @@
       "maxConsecutiveFailures": 2
     }
   ],
-  "cmd": "./fcm-$commit -n 1 -c /configs/staging/web_push/staging.toml",
+  "cmd": "./web-push-$commit -n 1 -c /configs/staging/web_push/staging.toml",
   "fetch": [
     {
       "uri": "http://artifactory.service.consul:8081/artifactory/web_push/staging/web-push-$commit",
