@@ -123,6 +123,17 @@ impl ResponseProducer {
                 event.set_retry_after(duration);
                 "retry"
             },
+            WebPushError::TimeoutError => {
+                let duration: u32 = if event.has_retry_count() {
+                    let base: u32 = 2;
+                    base.pow(event.get_retry_count())
+                } else {
+                    1
+                };
+
+                event.set_retry_after(duration);
+                "retry"
+            }
             WebPushError::Unauthorized => {
                 CALLBACKS_COUNTER.with_label_values(&["unauthorized"]).inc();
                 "no_retry"

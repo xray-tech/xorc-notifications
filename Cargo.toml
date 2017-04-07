@@ -6,8 +6,8 @@ build = "build.rs"
 
 [dependencies]
 web-push = { git = "https://github.com/pimeys/rust-web-push" }
-tokio-core = "0.1.*"
-tokio-signal = "0.1.2"
+tokio-core = "0.1"
+tokio-signal = "0.1"
 hyper = { git = "https://github.com/hyperium/hyper" }
 protobuf = "1.0.22"
 chan-signal = "0.1.6"

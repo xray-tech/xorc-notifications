@@ -5,6 +5,7 @@ use futures::sync::mpsc::{Sender, Receiver};
 use futures::{Future, Stream, Sink};
 use rustc_serialize::base64::FromBase64;
 use metrics::RESPONSE_TIMES_HISTOGRAM;
+use std::time::Duration;
 
 pub struct Notifier {}
 
@@ -12,7 +13,6 @@ pub type NotifierMessage = (Result<Option<String>, ()>, PushNotification);
 pub type ProducerMessage = (PushNotification, Option<Result<(), WebPushError>>);
 
 impl Notifier {
-
     pub fn new() -> Notifier {
         Notifier {}
     }
@@ -29,10 +29,10 @@ impl Notifier {
                 Ok(gcm_api_key) => {
                     match Self::build_message(&event, gcm_api_key) {
                         Ok(message) => {
-                            let timer = RESPONSE_TIMES_HISTOGRAM.start_timer();
+                            let response_time = RESPONSE_TIMES_HISTOGRAM.start_timer();
 
-                            let work = client.send(message).then(|res| {
-                                timer.observe_duration();
+                            let work = client.send_with_timeout(message, Duration::from_secs(2)).then(|res| {
+                                response_time.observe_duration();
                                 tx.send((event, Some(res)))
                             }).then(|_| Ok(()));
 
