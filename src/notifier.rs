@@ -1,4 +1,4 @@
-use web_push::{WebPushClient, WebPushMessage, WebPushMessageBuilder, WebPushError};
+use web_push::*;
 use events::push_notification::PushNotification;
 use tokio_core::reactor::Core;
 use futures::sync::mpsc::{Sender, Receiver};
@@ -66,7 +66,7 @@ impl Notifier {
         let mut message = WebPushMessageBuilder::new(pn.get_device_token(), &auth, &p256dh);
 
         if web.has_payload() {
-            message.set_payload(web.get_payload().as_bytes());
+            message.set_payload(ContentEncoding::AesGcm, web.get_payload().as_bytes());
         }
 
         if web.has_ttl() {

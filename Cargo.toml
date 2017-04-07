@@ -5,7 +5,7 @@ authors = ["Julius de Bruijn <julius.debruijn@360dialog.com>"]
 build = "build.rs"
 
 [dependencies]
-web-push = { git = "ssh://git@gitlab.service.consul/pimeys/rust-web-push.git" }
+web-push = { git = "https://github.com/pimeys/rust-web-push" }
 tokio-core = "0.1.*"
 tokio-signal = "0.1.2"
 hyper = { git = "https://github.com/hyperium/hyper" }
