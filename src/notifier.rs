@@ -133,19 +133,22 @@ fn gen_payload(event: &PushNotification) -> Payload {
             Some(alert_data.get_loc_args().iter().map(|a| a.to_string()).collect())
         } else { None };
 
-        let alert = APSAlert::Localized(
-            APSLocalizedAlert {
-                title: alert_data.get_title().to_string(),
-                body: alert_data.get_body().to_string(),
-                title_loc_key: title_loc_key,
-                title_loc_args: title_loc_args,
-                action_loc_key: action_loc_key,
-                loc_key: loc_key,
-                loc_args: loc_args,
-                launch_image: launch_image,
-            });
+        let alert = APSLocalizedAlert {
+            title: alert_data.get_title().to_string(),
+            body: alert_data.get_body().to_string(),
+            title_loc_key: title_loc_key,
+            title_loc_args: title_loc_args,
+            action_loc_key: action_loc_key,
+            loc_key: loc_key,
+            loc_args: loc_args,
+            launch_image: launch_image,
+        };
 
-        Payload::new(alert, sound, badge, category, custom_data)
+        if alert_data.has_mutable_content() && alert_data.get_mutable_content() {
+            Payload::new_mutable(alert, sound, badge, category, custom_data)
+        } else {
+            Payload::new(APSAlert::Localized(alert), sound, badge, category, custom_data)
+        }
     } else if notification_data.has_silent() {
         Payload::new_silent_notification(custom_data)
     } else {
