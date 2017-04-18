@@ -1,6 +1,6 @@
 use std::sync::Arc;
 use config::Config;
-use apns2::client::{TokenClient, CertificateClient, ProviderResponse};
+use apns2::client::{TokenClient, CertificateClient, ProviderResponse, APNSError};
 use apns2::notification::{NotificationOptions, Notification};
 use apns2::payload::{APSAlert, Payload, APSLocalizedAlert, CustomData};
 use events::push_notification::PushNotification;
@@ -30,12 +30,12 @@ impl Drop for CertificateNotifier {
 }
 
 impl CertificateNotifier {
-    pub fn new<R: Read>(mut certificate: R, mut private_key: R, sandbox: bool) -> CertificateNotifier {
+    pub fn new<R: Read>(mut certificate: R, mut private_key: R, sandbox: bool) -> Result<CertificateNotifier, APNSError> {
         APNS_CONNECTIONS.inc();
 
-        CertificateNotifier {
-            client: CertificateClient::new(sandbox, &mut certificate, &mut private_key).unwrap(),
-        }
+        Ok(CertificateNotifier {
+            client: CertificateClient::new(sandbox, &mut certificate, &mut private_key)?,
+        })
     }
 
     pub fn send(&self, event: &PushNotification, apns_topic: &str) -> ProviderResponse {
