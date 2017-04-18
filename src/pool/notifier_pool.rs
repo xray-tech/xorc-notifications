@@ -42,8 +42,10 @@ impl NotifierPool {
 
     fn create_new(&mut self, application_id: &str) {
         let create_notifier = move |cert: CertificateData| {
+            let apns = CertificateNotifier::new(cert.certificate, cert.private_key, cert.is_sandbox)?;
+
             Ok(Notifier {
-                apns: Some(CertificateNotifier::new(cert.certificate, cert.private_key, cert.is_sandbox)),
+                apns: Some(apns),
                 topic: cert.apns_topic,
                 updated_at: cert.updated_at,
                 timestamp: precise_time_s(),
@@ -53,6 +55,16 @@ impl NotifierPool {
         match self.certificate_registry.with_certificate(application_id, create_notifier) {
             Ok(notifier) => {
                 self.notifiers.insert(application_id.to_string(), notifier);
+            },
+            Err(CertificateError::Connection(e)) | Err(CertificateError::Ssl(e)) => {
+                error!("Error in connecting apns2 with application_id {}, reason: {:?}", application_id, e);
+
+                self.notifiers.insert(application_id.to_string(), Notifier {
+                    apns: None,
+                    topic: String::new(),
+                    updated_at: None,
+                    timestamp: precise_time_s(),
+                });
             },
             Err(e) => {
                 warn!("Ok, so the situation is this: there was an event for an application {}, \
@@ -83,7 +95,7 @@ impl NotifierPool {
         let create_notifier = move |cert: CertificateData| {
             if cert.updated_at != last_update {
                 Ok(Notifier {
-                    apns: Some(CertificateNotifier::new(cert.certificate, cert.private_key, cert.is_sandbox)),
+                    apns: Some(CertificateNotifier::new(cert.certificate, cert.private_key, cert.is_sandbox)?),
                     topic: cert.apns_topic,
                     updated_at: cert.updated_at,
                     timestamp: precise_time_s(),
@@ -96,7 +108,7 @@ impl NotifierPool {
                         error!("Error when pinging apns, reconnecting: {}", e);
 
                         Ok(Notifier {
-                            apns: Some(CertificateNotifier::new(cert.certificate, cert.private_key, cert.is_sandbox)),
+                            apns: Some(CertificateNotifier::new(cert.certificate, cert.private_key, cert.is_sandbox)?),
                             topic: cert.apns_topic,
                             updated_at: cert.updated_at,
                             timestamp: precise_time_s(),

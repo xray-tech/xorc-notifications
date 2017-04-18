@@ -6,6 +6,7 @@ use postgres::error::{Error as PostgresError};
 use r2d2;
 use r2d2_postgres::{SslMode, PostgresConnectionManager};
 use std::time::Duration;
+use apns2::client::APNSError;
 
 #[derive(Debug)]
 pub enum CertificateError {
@@ -13,6 +14,19 @@ pub enum CertificateError {
     NotFoundError(String),
     NotChanged(String),
     ApplicationIdError(String),
+    Connection(APNSError),
+    Ssl(APNSError),
+    Unknown(APNSError),
+}
+
+impl From<APNSError> for CertificateError {
+    fn from(e: APNSError) -> CertificateError {
+        match e {
+            APNSError::ClientConnectError(_) => CertificateError::Connection(e),
+            APNSError::SslError(_) => CertificateError::Ssl(e),
+            _ => CertificateError::Unknown(e)
+        }
+    }
 }
 
 pub struct CertificateRegistry {
