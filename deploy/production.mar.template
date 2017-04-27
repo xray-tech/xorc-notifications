@@ -1,0 +1,37 @@
+{
+  "id": "push-notifications/web-push/production",
+  "instances": 6,
+  "cpus": 0.5,
+  "mem": 512,
+  "labels": {
+    "collectd_app": "web-push-production",
+    "overrideTaskName": "web-push-production",
+    "commit_id": "$commit"
+  },
+  "constraints": [
+    ["hostname", "GROUP_BY", "4"]
+  ],
+  "env": {
+    "RUST_LOG": "info",
+    "RUST_BACKTRACE": "1"
+  },
+  "healthChecks": [
+    {
+      "protocol": "HTTP",
+      "path": "/",
+      "gracePeriodSeconds": 30,
+      "intervalSeconds": 5,
+      "portIndex": 0,
+      "timeoutSeconds": 2,
+      "maxConsecutiveFailures": 2
+    }
+  ],
+  "cmd": "./web-push-$commit -n 1 -c /configs/production/web_push/production.toml",
+  "fetch": [
+    {
+      "uri": "http://artifactory.service.consul:8081/artifactory/web_push/production/web-push-$commit",
+      "executable": true,
+      "extract": false
+    }
+  ]
+}
