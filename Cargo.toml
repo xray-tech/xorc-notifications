@@ -22,7 +22,6 @@ time = "0.1.35"
 postgres = "0.11"
 r2d2 = "0.7.0"
 r2d2_postgres = "0.10.1"
-chrono = "0.2"
 prometheus = "0.2"
 lazy_static = "0.1.*"
 

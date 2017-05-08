@@ -1,6 +1,6 @@
 use std::sync::Arc;
+use std::time::{SystemTime, Duration};
 use web_push::WebPushError;
-use chrono::offset::utc::UTC;
 use std::cmp;
 use amqp::{Session, Channel, Table, Basic, Options};
 use amqp::protocol::basic::BasicProperties;
@@ -105,10 +105,11 @@ impl ResponseProducer {
             WebPushError::ServerError(retry_after) => {
                 let duration: u32 = match retry_after {
                     Some(RetryAfter::Delay(duration)) =>
-                        cmp::max(0 as i64, duration.num_seconds()) as u32,
+                        cmp::max(0 as u64, duration.as_secs()) as u32,
                     Some(RetryAfter::DateTime(retry_time)) => {
-                        let retry_secs = retry_time.to_timespec().sec;
-                        cmp::max(0 as i64, retry_secs - UTC::now().timestamp()) as u32
+                        let retry_system_time: SystemTime = retry_time.into();
+                        let retry_duration = retry_system_time.duration_since(SystemTime::now()).unwrap_or(Duration::new(0, 0));
+                        cmp::max(0 as u64, retry_duration.as_secs()) as u32
                     }
                     None => {
                         if event.has_retry_count() {
@@ -146,8 +147,16 @@ impl ResponseProducer {
                 CALLBACKS_COUNTER.with_label_values(&["bed_request"]).inc();
                 "no_retry"
             },
-            WebPushError::ContentTooLong => {
-                CALLBACKS_COUNTER.with_label_values(&["content_too_long"]).inc();
+            WebPushError::PayloadTooLarge => {
+                CALLBACKS_COUNTER.with_label_values(&["payload_too_large"]).inc();
+                "no_retry"
+            },
+            WebPushError::EndpointNotValid => {
+                CALLBACKS_COUNTER.with_label_values(&["endpoint_not_valid"]).inc();
+                "no_retry"
+            },
+            WebPushError::EndpointNotFound => {
+                CALLBACKS_COUNTER.with_label_values(&["endpoint_not_found"]).inc();
                 "no_retry"
             },
             WebPushError::InvalidUri => {
