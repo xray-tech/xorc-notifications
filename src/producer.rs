@@ -182,23 +182,32 @@ impl ResponseProducer {
 
     fn convert_status(status: &APNSStatus) -> ApnsResult_Status {
         match *status {
-            APNSStatus::Success        => Success,
-            APNSStatus::BadRequest     => BadRequest,
-            APNSStatus::MissingChannel => MissingChannel,
-            APNSStatus::Timeout        => Timeout,
-            APNSStatus::Unknown        => Unknown,
-            _                          => Error,
+            APNSStatus::Success          => Success,
+            APNSStatus::BadRequest       => BadRequest,
+            APNSStatus::MissingChannel   => MissingChannel,
+            APNSStatus::Timeout          => Timeout,
+            APNSStatus::Unknown          => Unknown,
+            APNSStatus::Unregistered     => ApnsResult_Status::Unregistered,
+            APNSStatus::Forbidden        => Forbidden,
+            APNSStatus::MethodNotAllowed => MethodNotAllowed,
+            APNSStatus::PayloadTooLarge  => PayloadTooLarge,
+            APNSStatus::TooManyRequests  => TooManyRequests,
+            _                            => Error,
         }
     }
 
     fn convert_status_to_string(status: &APNSStatus) -> String {
         match *status {
-            APNSStatus::Success        => String::from("success"),
-            APNSStatus::BadRequest     => String::from("bad_request"),
-            APNSStatus::MissingChannel => String::from("missing_channel"),
-            APNSStatus::Timeout        => String::from("timeout"),
-            APNSStatus::Unknown        => String::from("unknown"),
-            _                          => String::from("error"),
+            APNSStatus::Success          => String::from("success"),
+            APNSStatus::BadRequest       => String::from("bad_request"),
+            APNSStatus::MissingChannel   => String::from("missing_channel"),
+            APNSStatus::Timeout          => String::from("timeout"),
+            APNSStatus::Unknown          => String::from("unknown"),
+            APNSStatus::Forbidden        => String::from("forbidden"),
+            APNSStatus::MethodNotAllowed => String::from("method_not_allowed"),
+            APNSStatus::PayloadTooLarge  => String::from("payload_too_large"),
+            APNSStatus::TooManyRequests  => String::from("too_many_requests"),
+            _                            => String::from("error"),
         }
     }
 
@@ -237,7 +246,6 @@ impl ResponseProducer {
     fn convert_reason(reason: &Option<APNSError>) -> Option<ApnsResult_Reason> {
         match *reason {
             Some(APNSError::PayloadEmpty)              => Some(PayloadEmpty),
-            Some(APNSError::PayloadTooLarge)           => Some(PayloadTooLarge),
             Some(APNSError::BadTopic)                  => Some(BadTopic),
             Some(APNSError::TopicDisallowed)           => Some(TopicDisallowed),
             Some(APNSError::BadMessageId)              => Some(BadMessageId),
@@ -246,14 +254,10 @@ impl ResponseProducer {
             Some(APNSError::MissingDeviceToken)        => Some(MissingDeviceToken),
             Some(APNSError::BadDeviceToken)            => Some(BadDeviceToken),
             Some(APNSError::DeviceTokenNotForTopic)    => Some(DeviceTokenNotForTopic),
-            Some(APNSError::Unregistered)              => Some(Unregistered),
             Some(APNSError::DuplicateHeaders)          => Some(DuplicateHeaders),
             Some(APNSError::BadCertificateEnvironment) => Some(BadCertificateEnvironment),
             Some(APNSError::BadCertificate)            => Some(BadCertificate),
-            Some(APNSError::Forbidden)                 => Some(Forbidden),
             Some(APNSError::BadPath)                   => Some(BadPath),
-            Some(APNSError::MethodNotAllowed)          => Some(MethodNotAllowed),
-            Some(APNSError::TooManyRequests)           => Some(TooManyRequests),
             Some(APNSError::IdleTimeout)               => Some(IdleTimeout),
             Some(APNSError::Shutdown)                  => Some(Shutdown),
             Some(APNSError::InternalServerError)       => Some(InternalServerError),
