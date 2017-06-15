@@ -20,7 +20,7 @@ impl Notifier {
     pub fn run(&self, consumer_rx: Receiver<NotifierMessage>, producer_tx: Sender<ProducerMessage>) {
         let mut core = Core::new().unwrap();
         let handle = core.handle();
-        let client = WebPushClient::new(&handle);
+        let client = WebPushClient::new(&handle).unwrap();
 
         let sender = consumer_rx.for_each(|(api_functionality, event)| {
             let tx = producer_tx.clone();
