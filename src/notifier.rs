@@ -18,7 +18,7 @@ impl Notifier {
     pub fn run(&self, consumer_rx: Receiver<(Option<String>, PushNotification)>, producer_tx: Sender<FcmData>) {
         let mut core = Core::new().unwrap();
         let handle = core.handle();
-        let client = Client::new(&handle);
+        let client = Client::new(&handle).unwrap();
 
         let sender = consumer_rx.for_each(|(api_key, event)| {
             let tx = producer_tx.clone();
