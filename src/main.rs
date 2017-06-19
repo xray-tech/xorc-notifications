@@ -154,7 +154,7 @@ fn main() {
     if let Some(_) = exit_signal.recv() {
         info!("Quitting the Google Firebase Push Notification service");
 
-        server_tx.complete(());
+        server_tx.send(()).unwrap();
         control.store(false, Ordering::Relaxed);
         for thread in threads {
             thread.thread().unpark();
