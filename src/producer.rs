@@ -14,6 +14,8 @@ use futures::Stream;
 use protobuf::core::Message;
 use metrics::{CALLBACKS_COUNTER, CALLBACKS_INFLIGHT};
 use std::sync::atomic::AtomicBool;
+use logger::GelfLogger;
+use gelf::{Message as GelfMessage, Error as GelfError, Level as GelfLevel};
 
 pub type FcmData = (PushNotification, Option<Result<FcmResponse, FcmError>>);
 
@@ -21,6 +23,7 @@ pub struct ResponseProducer {
     channel: Channel,
     session: Session,
     config: Arc<Config>,
+    logger: Arc<GelfLogger>
 }
 
 impl Drop for ResponseProducer {
@@ -31,7 +34,7 @@ impl Drop for ResponseProducer {
 }
 
 impl ResponseProducer {
-    pub fn new(config: Arc<Config>, control: Arc<AtomicBool>) -> ResponseProducer {
+    pub fn new(config: Arc<Config>, control: Arc<AtomicBool>, logger: Arc<GelfLogger>) -> ResponseProducer {
         let options = Options {
             vhost: config.rabbitmq.vhost.clone(),
             host: config.rabbitmq.host.clone(),
@@ -57,6 +60,7 @@ impl ResponseProducer {
             channel: channel,
             session: session,
             config: config.clone(),
+            logger: logger,
         }
     }
 
@@ -80,7 +84,8 @@ impl ResponseProducer {
     }
 
     fn handle_no_cert(&mut self, mut event: PushNotification) {
-        error!("Certificate missing for event: '{:?}'", event);
+        let _ = self.log_result("Error sending a push notification", &event, Some("MissingCertificateOrToken"));
+
         CALLBACKS_COUNTER.with_label_values(&["certificate_missing"]).inc();
 
         let mut fcm_result = FcmResult::new();
@@ -100,7 +105,8 @@ impl ResponseProducer {
     }
 
     fn handle_error(&mut self, mut event: PushNotification, error: FcmError) {
-        error!("Error in sending push notification: '{:?}', event: '{:?}'", &error, event);
+        let error_str = format!("{:?}", error);
+        let _ = self.log_result("Error sending a push notification", &event, Some(&error_str));
 
         let mut fcm_result = FcmResult::new();
         fcm_result.set_successful(false);
@@ -157,6 +163,29 @@ impl ResponseProducer {
             event.write_to_bytes().unwrap()).unwrap();
     }
 
+    fn log_result(&self, title: &str, event: &PushNotification, error: Option<&str>) -> Result<(), GelfError> {
+        let mut test_msg = GelfMessage::new(String::from(title));
+
+        test_msg.set_full_message(format!("{:?}", event)).
+            set_level(GelfLevel::Informational).
+            set_metadata("correlation_id", format!("{}", event.get_correlation_id()))?.
+            set_metadata("device_token",   format!("{}", event.get_device_token()))?.
+            set_metadata("app_id",         format!("{}", event.get_application_id()))?.
+            set_metadata("campaign_id",    format!("{}", event.get_campaign_id()))?.
+            set_metadata("event_source",   String::from(event.get_header().get_source()))?;
+
+        if let Some(msg) = error {
+            test_msg.set_metadata("successful", String::from("false"))?;
+            test_msg.set_metadata("error", format!("{}", msg))?;
+        } else {
+            test_msg.set_metadata("successful", String::from("true"))?;
+        }
+
+        self.logger.log_message(test_msg);
+
+        Ok(())
+    }
+
     fn handle_response(&mut self, mut event: PushNotification, response: FcmResponse) {
         let mut fcm_result = FcmResult::new();
 
@@ -180,13 +209,13 @@ impl ResponseProducer {
                     }
 
                     if result.error.is_none() {
-                        info!("Push notification result: '{:?}', event: '{:?}'", result, event);
+                        let _ = self.log_result("Successfully sent a push notification", &event, None);
 
                         CALLBACKS_COUNTER.with_label_values(&["success"]).inc();
                         fcm_result.set_successful(true);
                         fcm_result.set_status(Success);
                     } else {
-                        error!("Error in sending push notification: '{:?}', event: '{:?}'", result, event);
+                        let _ = self.log_result("Error sending a push notification", &event, result.error.as_ref().map(AsRef::as_ref));
 
                         fcm_result.set_successful(false);
 
@@ -211,12 +240,16 @@ impl ResponseProducer {
                     }
                 },
                 None => {
+                    let _ = self.log_result("Error sending a push notification", &event, Some("UnknownError"));
+
                     CALLBACKS_COUNTER.with_label_values(&["unknown_error"]).inc();
                     fcm_result.set_successful(false);
                     fcm_result.set_status(Unknown);
                 }
             },
             None => {
+                let _ = self.log_result("Error sending a push notification", &event, Some("UnknownError"));
+
                 CALLBACKS_COUNTER.with_label_values(&["unknown_error"]).inc();
                 fcm_result.set_successful(false);
                 fcm_result.set_status(Unknown);
