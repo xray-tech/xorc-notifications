@@ -50,7 +50,7 @@ impl ConnectionPool {
                     match self.token_notifiers.get(stage).unwrap().client.client.ping() {
                         Ok(()) => info!("APNs token connection ping OK for {}", stage),
                         Err(e) => {
-                            error!("Error with token connection ping for {}, reconnecting: {:?}", stage, e);
+                            info!("Error with token connection ping for {}, reconnecting: {:?}", stage, e);
 
                             self.token_notifiers.remove(stage);
                             self.token_notifiers.insert(stage, TokenNotifier::new(is_sandbox, self.config.clone()));

@@ -8,6 +8,7 @@ pub struct Config {
     pub postgres: PostgresConfig,
     pub rabbitmq: RabbitMqConfig,
     pub general: GeneralConfig,
+    pub log: LogConfig,
 }
 
 impl Config {
@@ -46,6 +47,11 @@ impl Config {
 #[derive(RustcEncodable, RustcDecodable, Debug)]
 pub struct GeneralConfig {
     pub certificates: String,
+}
+
+#[derive(RustcEncodable, RustcDecodable, Debug)]
+pub struct LogConfig {
+    pub host: String,
 }
 
 #[derive(RustcEncodable, RustcDecodable, Debug)]

@@ -20,3 +20,6 @@ host = "localhost"
 port = 5672
 login = "guest"
 password = "guest"
+
+[log]
+host = "graylog.service.consul:12201"

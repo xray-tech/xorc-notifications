@@ -1,7 +1,7 @@
 #[macro_use]
 extern crate log;
 extern crate env_logger;
-extern crate syslog;
+extern crate gelf;
 extern crate hyper;
 
 #[macro_use]
@@ -32,8 +32,7 @@ mod certificate_registry;
 mod pool;
 mod producer;
 
-use syslog::Facility;
-use logger::SyslogLogger;
+use logger::GelfLogger;
 use metrics::StatisticsServer;
 use std::sync::{Arc};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -48,31 +47,10 @@ use config::Config;
 use certificate_registry::CertificateRegistry;
 use producer::{ResponseProducer, ApnsResponse};
 
-fn setup_logger() {
-    match syslog::unix(Facility::LOG_USER) {
-        Ok(writer) => {
-            let _ = log::set_logger(|max_log_level| {
-                max_log_level.set(SyslogLogger::get_log_level_filter());
-                Box::new(SyslogLogger::new(writer))
-            });
-            println!("Initialized syslog logger");
-        },
-        Err(e) => {
-            env_logger::init().unwrap();
-            println!("No syslog, output to stderr, {}", e);
-        },
-    }
-}
-
 fn main() {
-    setup_logger();
-
-    info!("Apple Push Notification System starting up!");
-
-    let exit_signal = notify(&[Signal::INT, Signal::TERM]);
-
-    let mut number_of_threads = 1;
     let mut config_file_location = String::from("./config/config.toml");
+    let exit_signal = notify(&[Signal::INT, Signal::TERM]);
+    let mut number_of_threads = 1;
 
     let control = Arc::new(AtomicBool::new(true));
 
@@ -88,7 +66,11 @@ fn main() {
         ap.parse_args_or_exit();
     }
 
-    let config               = Arc::new(Config::parse(config_file_location));
+    let config = Arc::new(Config::parse(config_file_location));
+    let logger = Arc::new(GelfLogger::new(config.clone()).expect("Error initializing logger"));
+
+    info!("Apple Push Notification System starting up!");
+
     let certificate_registry = Arc::new(CertificateRegistry::new(config.clone()));
     let (tx_response, rx_response): (Sender<ApnsResponse>, Receiver<ApnsResponse>) = mpsc::channel();
 
@@ -108,7 +90,7 @@ fn main() {
     }).collect();
 
     threads.push({
-        let mut producer = ResponseProducer::new(config.clone(), rx_response, control.clone());
+        let mut producer = ResponseProducer::new(config.clone(), rx_response, control.clone(), logger.clone());
 
         thread::spawn(move || {
             info!("Starting response producer thread...");

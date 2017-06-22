@@ -81,10 +81,7 @@ impl TokenPool {
                 info!("Alles gut for application {}: {:?}", application_id, s);
             },
             Err(e) => {
-                error!("Now this error here, we HAD a token for an application {}, \
-                        but right now we don't anymore. Either way, the customer \
-                        switched to certificate authentication or the application \
-                        is now disabled. The reason was: {:?}", application_id, e);
+                warn!("Couldn't find a token for application_id {}, {:?}", application_id, e);
 
                 let mut token = self.tokens.get_mut(application_id).unwrap();
                 token.timestamp = precise_time_s();
@@ -111,9 +108,7 @@ impl TokenPool {
                 self.tokens.insert(application_id.to_string(), token);
             },
             Err(e) => {
-                warn!("Ok, so there was no token auth enabled for the application {}. \
-                       This is nothing serious, they probably just use certificate \
-                       authentication. The reason was: {:?}", application_id, e);
+                warn!("Couldn't find a token for application_id {}, {:?}", application_id, e);
 
                 self.tokens.insert(application_id.to_string(), Token {
                     apns: None,
