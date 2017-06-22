@@ -1,7 +1,7 @@
 #[macro_use]
 extern crate log;
 extern crate env_logger;
-extern crate syslog;
+extern crate gelf;
 extern crate hyper;
 extern crate futures;
 extern crate tokio_core;
@@ -36,8 +36,7 @@ mod metrics;
 mod certificate_registry;
 
 use config::Config;
-use syslog::Facility;
-use logger::SyslogLogger;
+use logger::GelfLogger;
 use chan_signal::{Signal, notify};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -50,29 +49,9 @@ use futures::sync::{mpsc, oneshot};
 use metrics::StatisticsServer;
 use certificate_registry::CertificateRegistry;
 
-fn setup_logger() {
-    match syslog::unix(Facility::LOG_USER) {
-        Ok(writer) => {
-            let _ = log::set_logger(|max_log_level| {
-                max_log_level.set(SyslogLogger::get_log_level_filter());
-                Box::new(SyslogLogger::new(writer))
-            });
-            println!("Initialized syslog logger");
-        },
-        Err(e) => {
-            env_logger::init().unwrap();
-            println!("No syslog, output to stderr, {}", e);
-        },
-    }
-}
-
 fn main() {
-    setup_logger();
-
-    info!("Google Firebase Push Notification service starting up!");
-
-    let exit_signal              = notify(&[Signal::INT, Signal::TERM]);
     let mut config_file_location = String::from("./config/config.toml");
+    let exit_signal              = notify(&[Signal::INT, Signal::TERM]);
     let mut number_of_threads    = 1;
 
     {
@@ -87,7 +66,11 @@ fn main() {
         ap.parse_args_or_exit();
     }
 
-    let config               = Arc::new(Config::parse(config_file_location));
+    let config = Arc::new(Config::parse(config_file_location));
+    let logger = Arc::new(GelfLogger::new(config.clone()).expect("Error initializing logger"));
+
+    info!("Google Firebase Push Notification service starting up!");
+
     let certificate_registry = Arc::new(CertificateRegistry::new(config.clone()));
     let control              = Arc::new(AtomicBool::new(true));
 
@@ -134,7 +117,7 @@ fn main() {
         }
 
         threads.push({
-            let mut producer = ResponseProducer::new(config.clone(), control.clone());
+            let mut producer = ResponseProducer::new(config.clone(), control.clone(), logger.clone());
 
             thread::spawn(move || {
                 info!("Starting response producer thread...");
