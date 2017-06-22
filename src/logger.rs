@@ -1,54 +1,74 @@
-use log::{Log, LogRecord, LogLevel, LogMetadata};
-use syslog::{Logger, Severity};
-use std::sync::Mutex;
-use log::LogLevelFilter;
+use std::sync::Arc;
+use config::Config;
+use log::{LogLevelFilter};
+use gelf::{Logger, UdpBackend, Message, Error};
 use std::env;
+use env_logger;
 
-pub struct SyslogLogger {
-    pub writer: Mutex<Box<Logger>>,
+pub struct GelfLogger {
+    connection: Option<Logger>,
+    filter: LogLevelFilter,
 }
 
-impl SyslogLogger {
-    pub fn new(writer: Box<Logger>) -> SyslogLogger {
-        SyslogLogger {
-            writer: Mutex::new(writer),
-        }
-    }
 
-    pub fn get_log_level_filter() -> LogLevelFilter {
-        if let Ok(val) = env::var("RUST_LOG") {
-            match val.as_ref() {
+impl GelfLogger {
+    pub fn new(config: Arc<Config>) -> Result<GelfLogger, Error> {
+        let log_level_filter = match env::var("RUST_LOG") {
+            Ok(val) => match val.as_ref() {
                 "info"  => LogLevelFilter::Info,
                 "debug" => LogLevelFilter::Debug,
                 "warn"  => LogLevelFilter::Warn,
                 "error" => LogLevelFilter::Error,
                 _       => LogLevelFilter::Info
-            }
-        } else {
-            LogLevelFilter::Info
-        }
-    }
-}
-
-impl Log for SyslogLogger {
-    fn enabled(&self, _metadata: &LogMetadata) -> bool {
-        true
-    }
-
-    fn log(&self, record: &LogRecord) {
-        let metadata = record.metadata();
-
-        let severity = match metadata.level() {
-            LogLevel::Error => Severity::LOG_ERR,
-            LogLevel::Warn => Severity::LOG_WARNING,
-            LogLevel::Info => Severity::LOG_INFO,
-            LogLevel::Debug => Severity::LOG_DEBUG,
-            LogLevel::Trace => Severity::LOG_DEBUG
+            },
+            _ => LogLevelFilter::Info
         };
 
-        if self.enabled(metadata) {
-            let writer = self.writer.lock().unwrap();
-            let _ = writer.send_3164(severity, &format!("{}", record.args()));
+        if let Ok(_) = env::var("RUST_GELF") {
+            let mut logger = Logger::new(Box::new(UdpBackend::new(&config.log.host)?))?;
+            let mut env_logger = Logger::new(Box::new(UdpBackend::new(&config.log.host)?))?;
+
+            logger.set_default_metadata(String::from("application_name"), String::from("fcm"));
+            env_logger.set_default_metadata(String::from("application_name"), String::from("fcm"));
+
+            if let Ok(environment) = env::var("RUST_ENV") {
+                logger.set_default_metadata(String::from("environment"), String::from(environment.clone()));
+                env_logger.set_default_metadata(String::from("environment"), String::from(environment.clone()));
+            } else {
+                logger.set_default_metadata(String::from("environment"), String::from("development"));
+                env_logger.set_default_metadata(String::from("environment"), String::from("development"));
+            };
+
+            env_logger.install(log_level_filter)?;
+
+            Ok(GelfLogger { connection: Some(logger), filter: log_level_filter })
+        } else {
+            env_logger::init().unwrap();
+            Ok(GelfLogger { connection: None, filter: log_level_filter })
+        }
+    }
+
+    pub fn log_message(&self, msg: Message) {
+        match self.connection {
+            Some(ref connection) => {
+                println!("Hey ho!");
+                connection.log_message(msg)  
+            },
+            None => {
+                let level: LogLevelFilter = msg.level().into();
+
+                if self.filter <= level {
+                    let metadata = msg.all_metadata().iter().fold(Vec::new(), |mut acc, (k, v)| {
+                        acc.push(format!("{}: {}", k, v));
+                        acc
+                    }).join(", ");
+
+                    println!("[{}] {}: ({})",
+                             level,
+                             msg.short_message(),
+                             metadata);
+                }
+            }
         }
     }
 }
