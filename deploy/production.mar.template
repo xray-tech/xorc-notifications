@@ -13,8 +13,6 @@
   ],
   "env": {
     "RUST_LOG": "info",
-    "RUST_GELF": "on",
-    "RUST_ENV": "production",
     "RUST_BACKTRACE": "1"
   },
   "healthChecks": [
