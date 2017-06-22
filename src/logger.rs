@@ -51,7 +51,6 @@ impl GelfLogger {
     pub fn log_message(&self, msg: Message) {
         match self.connection {
             Some(ref connection) => {
-                println!("Hey ho!");
                 connection.log_message(msg)  
             },
             None => {
