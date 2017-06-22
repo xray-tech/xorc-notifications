@@ -14,11 +14,14 @@ use protobuf::core::Message;
 use std::sync::atomic::AtomicBool;
 use metrics::{CALLBACKS_COUNTER, CALLBACKS_INFLIGHT};
 use notifier::ProducerMessage;
+use logger::GelfLogger;
+use gelf::{Message as GelfMessage, Level as GelfLevel, Error as GelfError};
 
 pub struct ResponseProducer {
     channel: Channel,
     session: Session,
     config: Arc<Config>,
+    logger: Arc<GelfLogger>,
 }
 
 impl Drop for ResponseProducer {
@@ -29,7 +32,7 @@ impl Drop for ResponseProducer {
 }
 
 impl ResponseProducer {
-    pub fn new(config: Arc<Config>, control: Arc<AtomicBool>) -> ResponseProducer {
+    pub fn new(config: Arc<Config>, control: Arc<AtomicBool>, logger: Arc<GelfLogger>) -> ResponseProducer {
         let options = Options {
             vhost: config.rabbitmq.vhost.clone(),
             host: config.rabbitmq.host.clone(),
@@ -55,6 +58,7 @@ impl ResponseProducer {
             channel: channel,
             session: session,
             config: config.clone(),
+            logger: logger,
         }
     }
 
@@ -96,7 +100,7 @@ impl ResponseProducer {
     }
 
     fn handle_error(&mut self, mut event: PushNotification, error: WebPushError) {
-        error!("Error in sending push notification: '{:?}', event: '{:?}'", &error, event);
+        let _ = self.log_result("Error sending a push notification", &event, Some(&error));
 
         let mut web_result = WebPushResult::new();
         web_result.set_successful(false);
@@ -181,7 +185,7 @@ impl ResponseProducer {
     }
 
     fn handle_ok(&mut self, mut event: PushNotification) {
-        info!("Successful push notification, baby! Event: '{:?}'", event);
+        let _ = self.log_result("Successfully sent a push notification", &event, None);
         CALLBACKS_COUNTER.with_label_values(&["success"]).inc();
         let mut web_result = WebPushResult::new();
         web_result.set_successful(true);
@@ -197,4 +201,29 @@ impl ResponseProducer {
             event.write_to_bytes().unwrap()).unwrap();
     }
 
+    fn log_result(&self, title: &str, event: &PushNotification, error: Option<&WebPushError>) -> Result<(), GelfError> {
+        let mut test_msg = GelfMessage::new(String::from(title));
+
+        test_msg.set_full_message(format!("{:?}", event)).
+            set_level(GelfLevel::Informational).
+            set_metadata("correlation_id", format!("{}", event.get_correlation_id()))?.
+            set_metadata("device_token",   format!("{}", event.get_device_token()))?.
+            set_metadata("app_id",         format!("{}", event.get_application_id()))?.
+            set_metadata("campaign_id",    format!("{}", event.get_campaign_id()))?.
+            set_metadata("event_source",   String::from(event.get_header().get_source()))?;
+
+        match error {
+            Some(error_msg) => {
+                test_msg.set_metadata("successful", String::from("false"))?;
+                test_msg.set_metadata("error", format!("{:?}", error_msg))?;
+            },
+            _ => {
+                test_msg.set_metadata("successful", String::from("true"))?;
+            }
+        }
+
+        self.logger.log_message(test_msg);
+
+        Ok(())
+    }
 }
