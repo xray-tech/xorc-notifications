@@ -13,9 +13,11 @@ use time::precise_time_ns;
 use config::Config;
 use amqp::{Session, Channel, Table, Basic, Options};
 use amqp::protocol::basic::BasicProperties;
-use apns2::client::{ProviderResponse, APNSStatus, APNSError};
+use apns2::client::{ProviderResponse, Response, APNSStatus, APNSError};
 use protobuf::core::Message;
 use metrics::{CALLBACKS_COUNTER, CALLBACKS_INFLIGHT, RESPONSE_TIMES_HISTOGRAM};
+use logger::GelfLogger;
+use gelf::{Message as GelfMessage, Level as GelfLevel, Error as GelfError};
 
 pub type ApnsResponse = (PushNotification, Option<ProviderResponse>);
 
@@ -25,6 +27,7 @@ pub struct ResponseProducer {
     channel: Channel,
     rx: Receiver<(PushNotification, Option<ProviderResponse>)>,
     control: Arc<AtomicBool>,
+    logger: Arc<GelfLogger>
 }
 
 impl Drop for ResponseProducer {
@@ -35,7 +38,7 @@ impl Drop for ResponseProducer {
 }
 
 impl ResponseProducer {
-    pub fn new(config: Arc<Config>, rx: Receiver<ApnsResponse>, control: Arc<AtomicBool>) -> ResponseProducer {
+    pub fn new(config: Arc<Config>, rx: Receiver<ApnsResponse>, control: Arc<AtomicBool>, logger: Arc<GelfLogger>) -> ResponseProducer {
         let options = Options {
             vhost: config.rabbitmq.vhost.clone(),
             host: config.rabbitmq.host.clone(),
@@ -63,6 +66,7 @@ impl ResponseProducer {
             channel: channel,
             rx: rx,
             control: control,
+            logger: logger,
         }
     }
 
@@ -81,8 +85,7 @@ impl ResponseProducer {
 
                     let routing_key = match response {
                         Ok(result) => {
-                            info!("Push notification result: '{:?}', event: '{:?}' ({} ms)",
-                                result, event, response_time / 1000000);
+                            let _ = self.log_result("Successfully sent a push notification", &event, Some(&result));
 
                             apns_result.set_successful(true);
                             apns_result.set_status(Self::convert_status(&result.status));
@@ -95,8 +98,7 @@ impl ResponseProducer {
                             "no_retry"
                         },
                         Err(result) => {
-                            error!("Error in sending push notification: '{:?}', event: '{:?}' ({} ms)",
-                                result, event, response_time / 1000000);
+                            let _ = self.log_result("Error sending a push notification", &event, Some(&result));
 
                             apns_result.set_status(Self::convert_status(&result.status));
                             apns_result.set_successful(false);
@@ -150,6 +152,8 @@ impl ResponseProducer {
                     CALLBACKS_INFLIGHT.dec();
                 },
                 Ok((mut event, None)) => {
+                    let _ = self.log_result("Error sending a push notification", &event, None);
+
                     let mut apns_result = ApnsResult::new();
 
                     apns_result.set_successful(false);
@@ -269,5 +273,40 @@ impl ResponseProducer {
             Some(APNSError::ExpiredProviderToken)      => Some(ExpiredProviderToken),
             _                                          => None,
         }
+    }
+
+    fn log_result(&self, title: &str, event: &PushNotification, response: Option<&Response>) -> Result<(), GelfError> {
+        let mut test_msg = GelfMessage::new(String::from(title));
+
+        test_msg.set_full_message(format!("{:?}", event)).
+            set_level(GelfLevel::Informational).
+            set_metadata("correlation_id", format!("{}", event.get_correlation_id()))?.
+            set_metadata("device_token",   format!("{}", event.get_device_token()))?.
+            set_metadata("app_id",         format!("{}", event.get_application_id()))?.
+            set_metadata("campaign_id",    format!("{}", event.get_campaign_id()))?.
+            set_metadata("event_source",   String::from(event.get_header().get_source()))?;
+
+        if let Some(r) = response {
+            match r.status {
+                APNSStatus::Success => {
+                    test_msg.set_metadata("successful", String::from("true"))?;
+                },
+                ref status => {
+                    test_msg.set_metadata("successful", String::from("false"))?;
+                    test_msg.set_metadata("error", format!("{:?}", status))?;
+
+                    if let Some(ref reason) = r.reason {
+                        test_msg.set_metadata("reason", format!("{:?}", reason))?;
+                    }
+                }
+            }
+        } else {
+            test_msg.set_metadata("successful", String::from("false"))?;
+            test_msg.set_metadata("error", String::from("MissingCertificateOrToken"))?;
+        }
+
+        self.logger.log_message(test_msg);
+
+        Ok(())
     }
 }

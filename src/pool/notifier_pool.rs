@@ -67,12 +67,7 @@ impl NotifierPool {
                 });
             },
             Err(e) => {
-                warn!("Ok, so the situation is this: there was an event for an application {}, \
-                       with no certificate stored into the postgres database. It can either \
-                       be, that the CSI didn't do this properly or that the application \
-                       is using authentication tokens. Anyways, Julius will not be the \
-                       right person to bother about this. I'd start with CSI if this \
-                       happens often. The reason was: {:?}", application_id, e);
+                warn!("Couldn't find a certificate for application_id {}, reason: {:?}", application_id, e);
 
                 self.notifiers.insert(application_id.to_string(), Notifier {
                     apns: None,
@@ -131,11 +126,7 @@ impl NotifierPool {
                 info!("Alles gut for application {}: {:?}", application_id, s);
             },
             Err(e) => {
-                error!("Ok fellows, this is a nice notification that we couldn't \
-                        find a certificate for application with an id of {}, \
-                        this is fine. The customer either disabled/removed \
-                        the app or switched to token authentication. Please \
-                        don't bother Julius about this, ok? The reason was: {:?}", application_id, e);
+                error!("Couldn't find a certificate for application_id {}, reason: {:?}", application_id, e);
 
                 let mut notifier = self.notifiers.get_mut(application_id).unwrap();
                 notifier.timestamp = precise_time_s();
