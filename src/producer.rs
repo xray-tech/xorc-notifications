@@ -41,8 +41,8 @@ impl ResponseProducer {
             password: config.rabbitmq.password.clone(), .. Default::default()
         };
 
-        let mut session = Session::new(options, control.clone()).unwrap();
-        let mut channel = session.open_channel(1).unwrap();
+        let mut session = Session::new(options, control.clone()).expect("Couldn't connect to RabbitMQ");
+        let mut channel = session.open_channel(1).expect("Couldn't open a RabbitMQ channel");
 
         channel.exchange_declare(
             &*config.rabbitmq.response_exchange,
@@ -52,7 +52,7 @@ impl ResponseProducer {
             false, // auto_delete
             false, // internal
             false, // nowait
-            Table::new()).unwrap();
+            Table::new()).expect("Couldn't declare a RabbitMQ exchange");
 
         ResponseProducer {
             channel: channel,
@@ -81,6 +81,16 @@ impl ResponseProducer {
         }
     }
 
+    fn publish(&mut self, event: PushNotification, routing_key: &str) {
+        self.channel.basic_publish(
+            &*self.config.rabbitmq.response_exchange,
+            routing_key,
+            false,   // mandatory
+            false,   // immediate
+            BasicProperties { ..Default::default() },
+            event.write_to_bytes().expect("Couldn't serialize a protobuf event")).expect("Couldn't publish to RabbitMQ");
+    }
+
     fn handle_no_cert(&mut self, mut event: PushNotification) {
         error!("Certificate missing for event: '{:?}'", event);
         CALLBACKS_COUNTER.with_label_values(&["certificate_missing"]).inc();
@@ -90,13 +100,7 @@ impl ResponseProducer {
         web_result.set_successful(false);
         event.mut_web().set_response(web_result);
 
-        self.channel.basic_publish(
-            &*self.config.rabbitmq.response_exchange,
-            "no_retry", // routing key
-            false,   // mandatory
-            false,   // immediate
-            BasicProperties { ..Default::default() },
-            event.write_to_bytes().unwrap()).unwrap();
+        self.publish(event, "no_retry");
     }
 
     fn handle_error(&mut self, mut event: PushNotification, error: WebPushError) {
@@ -175,13 +179,7 @@ impl ResponseProducer {
 
         event.mut_web().set_response(web_result);
 
-        self.channel.basic_publish(
-            &*self.config.rabbitmq.response_exchange,
-            routing_key, // routing key
-            false,   // mandatory
-            false,   // immediate
-            BasicProperties { ..Default::default() },
-            event.write_to_bytes().unwrap()).unwrap();
+        self.publish(event, routing_key);
     }
 
     fn handle_ok(&mut self, mut event: PushNotification) {
@@ -192,13 +190,7 @@ impl ResponseProducer {
 
         event.mut_web().set_response(web_result);
 
-        self.channel.basic_publish(
-            &*self.config.rabbitmq.response_exchange,
-            "no_retry", // routing key
-            false,   // mandatory
-            false,   // immediate
-            BasicProperties { ..Default::default() },
-            event.write_to_bytes().unwrap()).unwrap();
+        self.publish(event, "no_retry");
     }
 
     fn log_result(&self, title: &str, event: &PushNotification, error: Option<&WebPushError>) -> Result<(), GelfError> {
