@@ -33,7 +33,8 @@ struct ApiKey {
 
 impl Drop for Consumer {
     fn drop(&mut self) {
-        let mut channel = self.channel.lock().unwrap();
+        let mut channel = self.channel.lock()
+            .expect("Couldn't get the RabbitMQ channel mutex. RabbitMQ connection is not closed properly");
 
         let _ = channel.close(200, "Bye!");
         let _ = self.session.close(200, "Good bye!");
@@ -50,9 +51,9 @@ impl Consumer {
             port: config.rabbitmq.port,
             login: config.rabbitmq.login.clone(),
             password: config.rabbitmq.password.clone(), .. Default::default()
-        }, control.clone()).unwrap();
+        }, control.clone()).expect("Couldn't connect to RabbitMQ");
 
-        let mut channel = session.open_channel(1).unwrap();
+        let mut channel = session.open_channel(1).expect("Couldn't open a RabbitMq channel");
 
         channel.queue_declare(
             &*config.rabbitmq.queue,
@@ -61,7 +62,7 @@ impl Consumer {
             false, // exclusive
             false, // auto_delete
             false, // nowait
-            Table::new()).unwrap();
+            Table::new()).expect("Couldn't declare a RabbitMQ queue");
 
         channel.exchange_declare(
             &*config.rabbitmq.exchange,
@@ -71,14 +72,14 @@ impl Consumer {
             false, // auto_delete
             false, // internal
             false, // nowait
-            Table::new()).unwrap();
+            Table::new()).expect("Couldn't declare a RabbitMQ exchange");
 
         channel.queue_bind(
             &*config.rabbitmq.queue,
             &*config.rabbitmq.exchange,
             &*config.rabbitmq.routing_key,
             false, // nowait
-            Table::new()).unwrap();
+            Table::new()).expect("Couldn't bind a RabbitMQ queue to exchange");
 
         Consumer {
             channel: Mutex::new(channel),
@@ -89,7 +90,7 @@ impl Consumer {
     }
 
     pub fn consume(&self, notifier_tx: Sender<(Option<String>, PushNotification)>) -> Result<(), Error> {
-        let mut channel = self.channel.lock().unwrap();
+        let mut channel = self.channel.lock().expect("Couldn't get the RabbitMQ channel mutex");
         let consumer = FcmConsumer::new(notifier_tx, self.registry.clone());
 
         channel.basic_prefetch(100).ok().expect("failed to prefetch");
