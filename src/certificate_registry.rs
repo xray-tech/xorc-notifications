@@ -52,7 +52,8 @@ pub struct TokenData<'a> {
 
 impl CertificateRegistry {
     pub fn new(config: Arc<Config>) -> CertificateRegistry {
-        let manager = PostgresConnectionManager::new(config.postgres.uri.as_str(), SslMode::None).unwrap();
+        let manager = PostgresConnectionManager::new(config.postgres.uri.as_str(), SslMode::None)
+            .expect("Couldn't connect to PostgreSQL");
 
         let psql_config = r2d2::Config::builder()
             .pool_size(config.postgres.pool_size)
@@ -62,7 +63,7 @@ impl CertificateRegistry {
             .build();
 
         CertificateRegistry {
-            pool: r2d2::Pool::new(psql_config, manager).unwrap(),
+            pool: r2d2::Pool::new(psql_config, manager).expect("Couldn't create a PostgreSQL connection pool"),
         }
     }
 
@@ -80,7 +81,7 @@ impl CertificateRegistry {
                      AND ios.connection_type = 'certificate' \
                      LIMIT 1";
 
-        let connection = self.pool.get().unwrap();
+        let connection = self.pool.get().expect("Error getting a PostgreSQL connection from the pool");
 
         let result = match application.parse::<i32>() {
             Ok(application_id) => connection.query(query, &[&application_id]),

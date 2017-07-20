@@ -3,6 +3,17 @@ Apple Push Notification Consumer
 
 Reads events from RabbitMQ and sends push notifications through APNS2.
 
+Protobuf support
+----------------
+
+To do anything with the code one must install a protobuf compiler `protoc` that
+supports the version 2 of Protocol Buffers including support for the Rust
+backend.
+
+Installation instructions can be found from
+the [rust-protobuf Github page](https://github.com/stepancheg/rust-protobuf).
+
+
 Usage
 -----
 

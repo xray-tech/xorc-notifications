@@ -36,9 +36,9 @@ impl Consumer {
             port: config.rabbitmq.port,
             login: config.rabbitmq.login.clone(),
             password: config.rabbitmq.password.clone(), .. Default::default()
-        }, control.clone()).unwrap();
+        }, control.clone()).expect("Couldn't connect to RabbitMQ");
 
-        let mut channel = session.open_channel(1).unwrap();
+        let mut channel = session.open_channel(1).expect("Couldn't open a RabbitMQ channel");
 
         channel.queue_declare(
             &*config.rabbitmq.queue,
@@ -47,7 +47,7 @@ impl Consumer {
             false, // exclusive
             false, // auto_delete
             false, // nowait
-            Table::new()).unwrap();
+            Table::new()).expect("Couldn't declare a RabbitMQ queue");
 
         channel.exchange_declare(
             &*config.rabbitmq.exchange,
@@ -57,14 +57,14 @@ impl Consumer {
             false, // auto_delete
             false, // internal
             false, // nowait
-            Table::new()).unwrap();
+            Table::new()).expect("Couldn't declare a RabbitMQ exchange");
 
         channel.queue_bind(
             &*config.rabbitmq.queue,
             &*config.rabbitmq.exchange,
             &*config.rabbitmq.routing_key,
             false, // nowait
-            Table::new()).unwrap();
+            Table::new()).expect("Couldn't bind a RabbitMQ queue to an exchange");
 
         Consumer {
             channel: channel,
