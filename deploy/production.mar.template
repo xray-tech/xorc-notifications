@@ -9,7 +9,7 @@
     "commit_id": "$commit"
   },
   "constraints": [
-    ["hostname", "GROUP_BY", "4"]
+    ["hostname", "GROUP_BY", "5"]
   ],
   "env": {
     "RUST_LOG": "info",
