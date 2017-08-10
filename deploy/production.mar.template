@@ -1,8 +1,8 @@
 {
   "id": "push-notifications/fcm/production",
-  "instances": 6,
-  "cpus": 0.5,
-  "mem": 512,
+  "instances": 24,
+  "cpus": 0.2,
+  "mem": 128,
   "labels": {
     "collectd_app": "fcm-production",
     "overrideTaskName": "fcm-production",
