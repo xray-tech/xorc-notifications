@@ -98,8 +98,6 @@ impl ResponseProducer {
                             "no_retry"
                         },
                         Err(result) => {
-                            let _ = self.log_result("Error sending a push notification", &event, Some(&result));
-
                             apns_result.set_status(Self::convert_status(&result.status));
                             apns_result.set_successful(false);
 
@@ -123,22 +121,24 @@ impl ResponseProducer {
                                 None => CALLBACKS_COUNTER.with_label_values(&[&Self::convert_status_to_string(&result.status)]).inc(),
                             }
 
-                            if result.status == APNSStatus::Forbidden {
-                                event.set_retry_after(retry_after);
-                                "retry"
-                            } else {
-                                match apns_result.get_reason() {
-                                    InternalServerError | Shutdown | ServiceUnavailable | ExpiredProviderToken => {
+                            match apns_result.get_reason() {
+                                InternalServerError | Shutdown | ServiceUnavailable | ExpiredProviderToken => {
+                                    let _ = self.log_result("Retrying a push notification", &event, Some(&result));
+
+                                    event.set_retry_after(retry_after);
+                                    "retry"
+                                },
+                                _ => match apns_result.get_status() {
+                                    Timeout | Unknown | MissingChannel | Forbidden => {
+                                        let _ = self.log_result("Retrying a push notification", &event, Some(&result));
+
                                         event.set_retry_after(retry_after);
                                         "retry"
                                     },
-                                    _ => match apns_result.get_status() {
-                                        Timeout | Unknown | MissingChannel => {
-                                            event.set_retry_after(retry_after);
-                                            "retry"
-                                        },
-                                        _ => "no_retry",
-                                    }
+                                    _ => {
+                                        let _ = self.log_result("Error sending a push notification", &event, Some(&result));
+                                        "no_retry"
+                                    },
                                 }
                             }
                         }
