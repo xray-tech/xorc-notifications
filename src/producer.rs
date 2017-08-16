@@ -123,17 +123,22 @@ impl ResponseProducer {
                                 None => CALLBACKS_COUNTER.with_label_values(&[&Self::convert_status_to_string(&result.status)]).inc(),
                             }
 
-                            match apns_result.get_reason() {
-                                InternalServerError | Shutdown | ServiceUnavailable | ExpiredProviderToken => {
-                                    event.set_retry_after(retry_after);
-                                    "retry"
-                                },
-                                _ => match apns_result.get_status() {
-                                    Timeout | Unknown | MissingChannel => {
+                            if result.status == APNSStatus::Forbidden {
+                                event.set_retry_after(retry_after);
+                                "retry"
+                            } else {
+                                match apns_result.get_reason() {
+                                    InternalServerError | Shutdown | ServiceUnavailable | ExpiredProviderToken => {
                                         event.set_retry_after(retry_after);
                                         "retry"
                                     },
-                                    _ => "no_retry",
+                                    _ => match apns_result.get_status() {
+                                        Timeout | Unknown | MissingChannel => {
+                                            event.set_retry_after(retry_after);
+                                            "retry"
+                                        },
+                                        _ => "no_retry",
+                                    }
                                 }
                             }
                         }
