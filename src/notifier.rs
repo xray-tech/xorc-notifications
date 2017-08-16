@@ -58,11 +58,8 @@ impl TokenNotifier {
     pub fn send(&self, event: &PushNotification, apns_topic: &str, apns_token: &str) -> ProviderResponse {
         let payload      = gen_payload(event);
         let options      = gen_options(event, apns_topic);
-        let device_token = event.get_device_token();
 
-        info!("Sending a token push. DEVICE_TOKEN: {:?}, APNS_TOKEN: {:?}", device_token, apns_token);
-
-        self.client.push(Notification::new(payload, device_token, options), apns_token)
+        self.client.push(Notification::new(payload, event.get_device_token(), options), apns_token)
     }
 }
 
