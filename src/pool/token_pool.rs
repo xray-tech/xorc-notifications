@@ -68,7 +68,7 @@ impl TokenPool {
         let create_token = move |token: TokenData| {
             if token.updated_at != last_update {
                 Ok(Token {
-                    apns: Some(APNSToken::new(token.private_key, token.key_id, token.team_id, 0).unwrap()),
+                    apns: Some(APNSToken::new(token.private_key, token.key_id, token.team_id, 1200).unwrap()),
                     topic: token.apns_topic,
                     notifier: Some(TokenNotifier::new(token.is_sandbox.clone(), config)),
                     updated_at: token.updated_at,
@@ -122,7 +122,7 @@ impl TokenPool {
 
         let create_token = move |token: TokenData| {
             Ok(Token {
-                apns: Some(APNSToken::new(token.private_key, token.key_id, token.team_id, 0).unwrap()),
+                apns: Some(APNSToken::new(token.private_key, token.key_id, token.team_id, 1200).unwrap()),
                 topic: token.apns_topic,
                 notifier: Some(TokenNotifier::new(token.is_sandbox.clone(), config)),
                 updated_at: token.updated_at,
