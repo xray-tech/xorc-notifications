@@ -95,7 +95,7 @@ impl TokenPool {
     fn create_new(&mut self, application_id: &str) {
         let create_token = move |token: TokenData| {
             Ok(Token {
-                apns: Some(APNSToken::new(token.private_key, token.key_id, token.team_id).unwrap()),
+                apns: Some(APNSToken::new(token.private_key, token.key_id, token.team_id, 0).unwrap()),
                 sandbox: token.is_sandbox,
                 topic: token.apns_topic,
                 updated_at: token.updated_at,
