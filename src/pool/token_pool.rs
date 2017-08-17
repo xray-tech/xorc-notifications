@@ -3,10 +3,12 @@ use certificate_registry::{CertificateRegistry, CertificateError, TokenData};
 use std::sync::Arc;
 use time::{precise_time_s, Timespec};
 use apns2::apns_token::APNSToken;
+use notifier::TokenNotifier;
+use config::Config;
 
 pub struct Token {
+    pub notifier: Option<TokenNotifier>,
     pub apns: Option<APNSToken>,
-    pub sandbox: bool,
     pub topic: String,
     pub updated_at: Option<Timespec>,
     pub timestamp: f64,
@@ -16,14 +18,16 @@ pub struct TokenPool {
     certificate_registry: Arc<CertificateRegistry>,
     tokens: HashMap<String, Token>,
     cache_ttl: f64,
+    config: Arc<Config>,
 }
 
 impl TokenPool {
-    pub fn new(certificate_registry: Arc<CertificateRegistry>) -> TokenPool {
+    pub fn new(certificate_registry: Arc<CertificateRegistry>, config: Arc<Config>) -> TokenPool {
         TokenPool {
             certificate_registry: certificate_registry,
             tokens: HashMap::new(),
             cache_ttl: 60.0,
+            config: config,
         }
     }
 
@@ -52,19 +56,40 @@ impl TokenPool {
     }
 
     fn update_existing(&mut self, application_id: &str) {
+        let config = self.config.clone();
         let last_update = self.tokens.get(application_id).unwrap().updated_at.clone();
+
+        let mut ping_result = None;
+
+        if let Some(ref apns) = self.tokens.get(application_id).unwrap().notifier {
+            ping_result = Some(apns.client.client.ping());
+        }
 
         let create_token = move |token: TokenData| {
             if token.updated_at != last_update {
                 Ok(Token {
                     apns: Some(APNSToken::new(token.private_key, token.key_id, token.team_id, 0).unwrap()),
-                    sandbox: token.is_sandbox,
                     topic: token.apns_topic,
+                    notifier: Some(TokenNotifier::new(token.is_sandbox.clone(), config)),
                     updated_at: token.updated_at,
                     timestamp: precise_time_s(),
                 })
             } else {
-                Err(CertificateError::NotChanged(format!("No changes to the token")))
+                match ping_result {
+                    Some(Ok(())) => Err(CertificateError::NotChanged(format!("No changes to the token, ping ok"))),
+                    None => Err(CertificateError::NotChanged(format!("No changes to the token"))),
+                    Some(Err(e)) => {
+                        error!("Error when pinging apns, reconnecting: {}", e);
+
+                        Ok(Token {
+                            apns: Some(APNSToken::new(token.private_key, token.key_id, token.team_id, 0).unwrap()),
+                            topic: token.apns_topic,
+                            notifier: Some(TokenNotifier::new(token.is_sandbox.clone(), config)),
+                            updated_at: token.updated_at,
+                            timestamp: precise_time_s(),
+                        })
+                    }
+                }
             }
         };
 
@@ -93,11 +118,13 @@ impl TokenPool {
     }
 
     fn create_new(&mut self, application_id: &str) {
+        let config = self.config.clone();
+
         let create_token = move |token: TokenData| {
             Ok(Token {
                 apns: Some(APNSToken::new(token.private_key, token.key_id, token.team_id, 0).unwrap()),
-                sandbox: token.is_sandbox,
                 topic: token.apns_topic,
+                notifier: Some(TokenNotifier::new(token.is_sandbox.clone(), config)),
                 updated_at: token.updated_at,
                 timestamp: precise_time_s(),
             })
@@ -112,7 +139,7 @@ impl TokenPool {
 
                 self.tokens.insert(application_id.to_string(), Token {
                     apns: None,
-                    sandbox: true,
+                    notifier: None,
                     topic: String::new(),
                     updated_at: None,
                     timestamp: precise_time_s(),

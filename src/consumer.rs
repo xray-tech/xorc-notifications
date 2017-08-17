@@ -120,8 +120,13 @@ impl AmqpConsumer for ApnsConsumer {
                 let response = match self.pool.get(event.get_application_id()) {
                     Some(ApnsConnection::WithCertificate { ref notifier, ref topic }) =>
                         Some(notifier.send(&event, topic)),
-                    Some(ApnsConnection::WithToken { ref notifier, ref token, ref topic }) =>
-                        Some(notifier.send(&event, topic, token.signature())),
+                    Some(ApnsConnection::WithToken { ref notifier, ref token, ref topic }) => {
+                        let signature = token.signature();
+
+                        println!("App: {}, Topic: {}, Signature: {}", event.get_application_id(), topic, signature);
+
+                        Some(notifier.send(&event, topic, signature))
+                    },
                     None => None
                 };
 
