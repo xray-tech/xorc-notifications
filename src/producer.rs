@@ -72,6 +72,32 @@ impl ResponseProducer {
         }
     }
 
+    fn publish(&mut self, event: PushNotification, routing_key: &str) {
+        if event.has_exchange() && routing_key == "no_retry" {
+            let response_routing_key = if event.has_response_recipient_id() {
+                event.get_response_recipient_id()
+            } else {
+                ""
+            };
+
+            self.channel.basic_publish(
+                event.get_exchange(),
+                response_routing_key,
+                false,   // mandatory
+                false,   // immediate
+                BasicProperties { ..Default::default() },
+                event.write_to_bytes().expect("Couldn't serialize a protobuf event")).expect("Couldn't publish to RabbitMQ");
+        }
+
+        self.channel.basic_publish(
+            &*self.config.rabbitmq.response_exchange,
+            routing_key,
+            false,   // mandatory
+            false,   // immediate
+            BasicProperties { ..Default::default() },
+            event.write_to_bytes().expect("Couldn't serialize a protobuf event")).expect("Couldn't publish to RabbitMQ");
+    }
+
     pub fn run(&mut self) {
         let wait_duration     = Duration::from_millis(100);
         let response_timeout  = Duration::new(2, 0);
@@ -163,13 +189,7 @@ impl ResponseProducer {
 
                     event.mut_apple().set_result(apns_result);
 
-                    self.channel.basic_publish(
-                        &*self.config.rabbitmq.response_exchange,
-                        routing_key, // routing key
-                        false,   // mandatory
-                        false,   // immediate
-                        BasicProperties { ..Default::default() },
-                        event.write_to_bytes().unwrap()).unwrap();
+                    self.publish(event, routing_key);
 
                     CALLBACKS_INFLIGHT.dec();
                 },
@@ -184,13 +204,7 @@ impl ResponseProducer {
 
                     event.mut_apple().set_result(apns_result);
 
-                    self.channel.basic_publish(
-                        &*self.config.rabbitmq.response_exchange,
-                        "no_retry", // routing key
-                        false,   // mandatory
-                        false,   // immediate
-                        BasicProperties { ..Default::default() },
-                        event.write_to_bytes().unwrap()).unwrap();
+                    self.publish(event, "no_retry");
 
                     CALLBACKS_INFLIGHT.dec();
                     CALLBACKS_COUNTER.with_label_values(&["certificate_missing"]).inc();
