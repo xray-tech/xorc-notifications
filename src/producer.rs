@@ -1,11 +1,14 @@
 use std::sync::Arc;
 use std::time::{SystemTime, Duration};
 use std::cmp;
+use time;
 use amqp::{Session, Channel, Table, Basic, Options};
 use amqp::protocol::basic::BasicProperties;
 use events::push_notification::PushNotification;
+use events::notification_result::{NotificationResult, NotificationResult_Error};
 use events::google_notification::FcmResult;
 use events::google_notification::FcmResult_Status::*;
+use events::header::Header;
 use hyper::header::RetryAfter;
 use fcm::response::{FcmError, FcmResponse};
 use config::Config;
@@ -84,6 +87,49 @@ impl ResponseProducer {
     }
 
     fn publish(&mut self, event: PushNotification, routing_key: &str) {
+        if event.has_exchange() && routing_key == "no_retry" {
+            let response_routing_key = if event.has_response_recipient_id() {
+                event.get_response_recipient_id()
+            } else {
+                ""
+            };
+
+            let response = event.get_google().get_response();
+            let current_time = time::get_time();
+
+            let mut header = Header::new();
+            header.set_created_at((current_time.sec as i64 * 1000) +
+                                  (current_time.nsec as i64 / 1000 / 1000));
+            header.set_source(String::from("fcm"));
+            header.set_recipient_id(String::from(response_routing_key));
+
+            let mut result_event = NotificationResult::new();
+            result_event.set_header(header);
+            result_event.set_universe(String::from(event.get_universe()));
+
+            match response.get_status() {
+                Success => {
+                    result_event.set_successful(true);
+                },
+                NotRegistered => {
+                    result_event.set_successful(false);
+                    result_event.set_error(NotificationResult_Error::Unsubscribed);
+                },
+                _ => {
+                    result_event.set_successful(false);
+                    result_event.set_error(NotificationResult_Error::Other);
+                },
+            }
+
+            self.channel.basic_publish(
+                event.get_exchange(),
+                response_routing_key,
+                false,   // mandatory
+                false,   // immediate
+                BasicProperties { ..Default::default() },
+                result_event.write_to_bytes().expect("Couldn't serialize a protobuf event")).expect("Couldn't publish to RabbitMQ");
+        }
+
         self.channel.basic_publish(
             &*self.config.rabbitmq.response_exchange,
             routing_key,
@@ -258,5 +304,4 @@ impl ResponseProducer {
 
         self.publish(event, "no_retry");
     }
-
 }
