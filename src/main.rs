@@ -33,6 +33,7 @@ mod events;
 mod producer;
 mod certificate_registry;
 mod metrics;
+mod error;
 
 use logger::GelfLogger;
 use chan_signal::{Signal, notify};

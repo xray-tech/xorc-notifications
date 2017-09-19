@@ -10,6 +10,7 @@ fn main() {
                                   "./third_party/events/schema/notification/apple_notification.proto",
                                   "./third_party/events/schema/notification/google_notification.proto",
                                   "./third_party/events/schema/notification/push_notification.proto",
+                                  "./third_party/events/schema/notification/notification_result.proto",
                                   "./third_party/events/schema/notification/webpush_notification.proto",
     ]).status().unwrap();
 }
