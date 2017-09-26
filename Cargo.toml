@@ -16,15 +16,16 @@ toml = "0.1.30"
 rustc-serialize = "0.3.19"
 time = "0.1.35"
 hyper = "0.9.13"
-r2d2 = "0.7.0"
-r2d2_postgres = "0.10.1"
+r2d2 = "0.7"
+r2d2_postgres = "0.13"
 prometheus = "0.2"
 lazy_static = "0.1.*"
+postgres-derive = "0.3"
 
 [dependencies.postgres]
-version = "0.11"
+version = "0.15"
 default-features = true
-features = ["time"]
+features = ["with-time"]
 
 [dependencies.amqp]
 git = "https://github.com/pimeys/rust-amqp"

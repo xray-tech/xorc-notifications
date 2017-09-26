@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::Receiver;
-use std::thread;
+use std::{i32, thread};
 use events::push_notification::PushNotification;
 use events::apple_notification::ApnsResult;
 use events::apple_notification::ApnsResult_Status;
@@ -18,6 +18,8 @@ use protobuf::core::Message;
 use metrics::{CALLBACKS_COUNTER, CALLBACKS_INFLIGHT, RESPONSE_TIMES_HISTOGRAM};
 use logger::GelfLogger;
 use gelf::{Message as GelfMessage, Level as GelfLevel, Error as GelfError};
+use consumer_supervisor::CONSUMER_FAILURES;
+use std::str::FromStr;
 
 pub type ApnsResponse = (PushNotification, Option<ProviderResponse>);
 
@@ -27,7 +29,7 @@ pub struct ResponseProducer {
     channel: Channel,
     rx: Receiver<(PushNotification, Option<ProviderResponse>)>,
     control: Arc<AtomicBool>,
-    logger: Arc<GelfLogger>
+    logger: Arc<GelfLogger>,
 }
 
 impl Drop for ResponseProducer {
@@ -129,7 +131,22 @@ impl ResponseProducer {
                                     "retry"
                                 },
                                 _ => match apns_result.get_status() {
-                                    Timeout | Unknown | MissingChannel | Forbidden => {
+                                    MissingChannel => {
+                                        let _ = self.log_result("Retrying a push notification", &event, Some(&result));
+
+                                        match i32::from_str(event.get_application_id()) {
+                                            Ok(app_id) => {
+                                                let mut failures = CONSUMER_FAILURES.lock().unwrap();
+
+                                                failures.insert(app_id);
+                                            },
+                                            Err(_) => error!("Faulty app-id: {}", event.get_application_id())
+                                        }
+
+                                        event.set_retry_after(retry_after);
+                                        "retry"
+                                    },
+                                    Timeout | Unknown | Forbidden => {
                                         let _ = self.log_result("Retrying a push notification", &event, Some(&result));
 
                                         event.set_retry_after(retry_after);

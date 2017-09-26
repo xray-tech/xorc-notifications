@@ -1,0 +1,36 @@
+{
+  "id": "push-notifications/apns2/supervisor",
+  "instances": 1,
+  "cpus": 0.1,
+  "mem": 20,
+  "labels": {
+    "collectd_app": "apns2-supervisor",
+    "overrideTaskName": "apns2-supervisor",
+    "commit_id": "$commit"
+  },
+  "env": {
+    "RUST_LOG": "info",
+    "RUST_GELF": "on",
+    "RUST_ENV": "supervisor",
+    "RUST_BACKTRACE": "1"
+  },
+  "healthChecks": [
+    {
+      "protocol": "HTTP",
+      "path": "/",
+      "gracePeriodSeconds": 30,
+      "intervalSeconds": 5,
+      "portIndex": 0,
+      "timeoutSeconds": 2,
+      "maxConsecutiveFailures": 2
+    }
+  ],
+  "cmd": "./apns2-$commit -c /configs/staging/dmp/apns2/staging.toml",
+  "fetch": [
+    {
+      "uri": "http://artifactory.service.consul:8081/artifactory/apns2/supervisor/apns2-$commit",
+      "executable": true,
+      "extract": false
+    }
+  ]
+}
