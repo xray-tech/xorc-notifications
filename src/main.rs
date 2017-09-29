@@ -10,6 +10,9 @@ extern crate prometheus;
 #[macro_use]
 extern crate lazy_static;
 
+#[macro_use]
+extern crate postgres_derive;
+
 extern crate postgres;
 extern crate r2d2;
 extern crate r2d2_postgres;
@@ -29,8 +32,8 @@ mod logger;
 mod metrics;
 mod config;
 mod certificate_registry;
-mod pool;
 mod producer;
+mod consumer_supervisor;
 
 use logger::GelfLogger;
 use metrics::StatisticsServer;
@@ -42,24 +45,19 @@ use std::thread;
 use std::thread::JoinHandle;
 use chan_signal::{Signal, notify};
 use argparse::{ArgumentParser, Store};
-use consumer::Consumer;
 use config::Config;
-use certificate_registry::CertificateRegistry;
 use producer::{ResponseProducer, ApnsResponse};
+use consumer_supervisor::ConsumerSupervisor;
 
 fn main() {
     let mut config_file_location = String::from("./config/config.toml");
     let exit_signal = notify(&[Signal::INT, Signal::TERM]);
-    let mut number_of_threads = 1;
 
     let control = Arc::new(AtomicBool::new(true));
 
     {
         let mut ap = ArgumentParser::new();
         ap.set_description("Apple Push Notification System");
-        ap.refer(&mut number_of_threads)
-            .add_option(&["-n", "--number_of_threads"], Store,
-                        "Number of worker threads (default: 1)");
         ap.refer(&mut config_file_location)
             .add_option(&["-c", "--config"], Store,
                         "Config file (default: config.toml)");
@@ -71,23 +69,19 @@ fn main() {
 
     info!("Apple Push Notification System starting up!");
 
-    let certificate_registry = Arc::new(CertificateRegistry::new(config.clone()));
     let (tx_response, rx_response): (Sender<ApnsResponse>, Receiver<ApnsResponse>) = mpsc::channel();
 
-    let mut threads : Vec<JoinHandle<_>> = (0..number_of_threads).map(|i| {
-        let mut consumer = Consumer::new(control.clone(), config.clone(), certificate_registry.clone());
-        let tx = tx_response.clone();
+    let mut threads : Vec<JoinHandle<_>> = Vec::new();
+
+    threads.push({
+        let mut supervisor = ConsumerSupervisor::new(config.clone(), control.clone(), tx_response, logger.clone());
 
         thread::spawn(move || {
-            info!("Starting consumer #{}", i);
-
-            if let Err(error) = consumer.consume(tx) {
-                error!("Error in consumer: {:?}", error);
-            }
-
-            info!("Exiting consumer #{}", i);
+            info!("Starting consumer supervisor thread...");
+            supervisor.run();
+            info!("Exiting consumer supervisor thread...");
         })
-    }).collect();
+    });
 
     threads.push({
         let mut producer = ResponseProducer::new(config.clone(), rx_response, control.clone(), logger.clone());

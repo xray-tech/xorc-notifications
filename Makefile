@@ -17,6 +17,10 @@ ifeq ($(STAGE), production)
 	stage = production
 endif
 
+ifeq ($(STAGE), supervisor)
+	stage = supervisor
+endif
+
 config = deploy/$(stage).mar.template
 
 .PHONY: help
