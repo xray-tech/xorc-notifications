@@ -196,8 +196,13 @@ impl ConsumerSupervisor {
                 let _ = log_msg.set_metadata("connection_type", String::from("token"));
 
                 ApnsConnection::Token {
-                    notifier: TokenNotifier::new(endpoint == &ApnsEndpoint::Sandbox, self.config.clone()),
-                    token: APNSToken::new(Cursor::new(token), key_id.as_ref(), team_id.as_ref(), 1200).unwrap(),
+                    notifier: TokenNotifier::new(
+                        endpoint == &ApnsEndpoint::Sandbox,
+                        self.config.clone()),
+                    token: APNSToken::new(
+                        Cursor::new(token),
+                        key_id.as_ref(),
+                        team_id.as_ref(), 1200).unwrap(),
                     topic: app.topic.clone(),
                 }
             }
