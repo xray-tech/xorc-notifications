@@ -1,13 +1,16 @@
 {
   "id": "push-notifications/apns2/supervisor",
-  "instances": 1,
-  "cpus": 0.1,
-  "mem": 20,
+  "instances": 12,
+  "cpus": 1,
+  "mem": 512,
   "labels": {
     "collectd_app": "apns2-supervisor",
     "overrideTaskName": "apns2-supervisor",
     "commit_id": "$commit"
   },
+  "constraints": [
+    ["hostname", "GROUP_BY", "4"]
+  ],
   "env": {
     "RUST_LOG": "info",
     "RUST_GELF": "on",
@@ -25,7 +28,7 @@
       "maxConsecutiveFailures": 2
     }
   ],
-  "cmd": "./apns2-$commit -c /configs/staging/dmp/apns2/staging.toml",
+  "cmd": "./apns2-$commit -c /configs/production/dmp/apns2/production.toml",
   "fetch": [
     {
       "uri": "http://artifactory.service.consul:8081/artifactory/apns2/supervisor/apns2-$commit",
