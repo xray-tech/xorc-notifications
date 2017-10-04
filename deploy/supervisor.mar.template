@@ -1,6 +1,6 @@
 {
   "id": "push-notifications/apns2/supervisor",
-  "instances": 12,
+  "instances": 1,
   "cpus": 1,
   "mem": 512,
   "labels": {
@@ -8,9 +8,6 @@
     "overrideTaskName": "apns2-supervisor",
     "commit_id": "$commit"
   },
-  "constraints": [
-    ["hostname", "GROUP_BY", "4"]
-  ],
   "env": {
     "RUST_LOG": "info",
     "RUST_GELF": "on",
