@@ -110,7 +110,14 @@ impl ConsumerSupervisor {
                                 acc.insert(app.id, ConsumerAction::Update(consumer));
                             },
                             Err(e) => {
-                                error!("Error in creating a consumer for app {}: {:?}", app.id, e);
+                                let mut log_msg = GelfMessage::new(format!("Error in creating a consumer"));
+                                let _ = log_msg.set_metadata("app_id", format!("{}", app.id));
+                                let _ = log_msg.set_metadata("error", format!("ConsumerCreateError"));
+
+                                log_msg.set_full_message(format!("{:?}", e));
+                                log_msg.set_level(GelfLevel::Error);
+
+                                self.logger.log_message(log_msg);
                             }
                         }
                     },
