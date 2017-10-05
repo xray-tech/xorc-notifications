@@ -198,7 +198,7 @@ impl ConsumerSupervisor {
                 ApnsConnection::Token {
                     notifier: TokenNotifier::new(
                         endpoint == &ApnsEndpoint::Sandbox,
-                        self.config.clone()),
+                        self.config.clone())?,
                     token: APNSToken::new(
                         Cursor::new(token),
                         key_id.as_ref(),

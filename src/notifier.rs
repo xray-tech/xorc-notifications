@@ -31,11 +31,14 @@ impl Drop for CertificateNotifier {
 
 impl CertificateNotifier {
     pub fn new<R: Read>(mut certificate: R, mut private_key: R, sandbox: bool) -> Result<CertificateNotifier, APNSError> {
-        CERTIFICATE_CONSUMERS.inc();
+        match CertificateClient::new(sandbox, &mut certificate, &mut private_key) {
+            Ok(client) => {
+                CERTIFICATE_CONSUMERS.inc();
 
-        Ok(CertificateNotifier {
-            client: CertificateClient::new(sandbox, &mut certificate, &mut private_key)?,
-        })
+                Ok(CertificateNotifier {client: client})
+            },
+            Err(e) => Err(e)
+        }
     }
 
     pub fn send(&self, event: &PushNotification, apns_topic: &str) -> ProviderResponse {
@@ -47,11 +50,14 @@ impl CertificateNotifier {
 }
 
 impl TokenNotifier {
-    pub fn new(sandbox: bool, config: Arc<Config>) -> TokenNotifier {
-        TOKEN_CONSUMERS.inc();
+    pub fn new(sandbox: bool, config: Arc<Config>) -> Result<TokenNotifier, APNSError> {
+        match TokenClient::new(sandbox, &config.general.certificates) {
+            Ok(client) => {
+                TOKEN_CONSUMERS.inc();
 
-        TokenNotifier {
-            client: TokenClient::new(sandbox, &config.general.certificates).unwrap(),
+                Ok(TokenNotifier {client: client})
+            },
+            Err(e) => Err(e)
         }
     }
 
