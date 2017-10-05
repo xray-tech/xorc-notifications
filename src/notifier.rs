@@ -6,7 +6,7 @@ use apns2::payload::{APSAlert, Payload, APSLocalizedAlert, CustomData};
 use events::push_notification::PushNotification;
 use std::io::Read;
 use rustc_serialize::json::{Json};
-use metrics::APNS_CONNECTIONS;
+use metrics::{TOKEN_CONSUMERS, CERTIFICATE_CONSUMERS};
 use std::ops::Drop;
 
 pub struct CertificateNotifier {
@@ -19,19 +19,19 @@ pub struct TokenNotifier {
 
 impl Drop for TokenNotifier {
     fn drop(&mut self) {
-        APNS_CONNECTIONS.dec();
+        TOKEN_CONSUMERS.dec();
     }
 }
 
 impl Drop for CertificateNotifier {
     fn drop(&mut self) {
-        APNS_CONNECTIONS.dec();
+        CERTIFICATE_CONSUMERS.dec();
     }
 }
 
 impl CertificateNotifier {
     pub fn new<R: Read>(mut certificate: R, mut private_key: R, sandbox: bool) -> Result<CertificateNotifier, APNSError> {
-        APNS_CONNECTIONS.inc();
+        CERTIFICATE_CONSUMERS.inc();
 
         Ok(CertificateNotifier {
             client: CertificateClient::new(sandbox, &mut certificate, &mut private_key)?,
@@ -48,7 +48,7 @@ impl CertificateNotifier {
 
 impl TokenNotifier {
     pub fn new(sandbox: bool, config: Arc<Config>) -> TokenNotifier {
-        APNS_CONNECTIONS.inc();
+        TOKEN_CONSUMERS.inc();
 
         TokenNotifier {
             client: TokenClient::new(sandbox, &config.general.certificates).unwrap(),

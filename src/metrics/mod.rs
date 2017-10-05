@@ -22,9 +22,14 @@ lazy_static! {
         "The HTTP request latencies in seconds"
     ).unwrap();
 
-    pub static ref APNS_CONNECTIONS: Gauge = register_gauge!(
-        "apns_http2_connections",
-        "Number of http2 connections to Apple push notification service"
+    pub static ref TOKEN_CONSUMERS: Gauge = register_gauge!(
+        "apns_token_consumers",
+        "Number of token-based consumers to Apple push notification service"
+    ).unwrap();
+
+    pub static ref CERTIFICATE_CONSUMERS: Gauge = register_gauge!(
+        "apns_certificate_consumers",
+        "Number of certificate-based consumers to Apple push notification service"
     ).unwrap();
 }
 

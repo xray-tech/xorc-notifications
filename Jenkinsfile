@@ -19,6 +19,12 @@ node('master') {
 
       stage "Deployment"
       build.deploy("STAGE=production make auto_update")
+    } else if (job_name == "supervisor") {
+      stage "Upload binary to repository"
+      sh "STAGE=supervisor make upload"
+
+      stage "Deployment"
+      build.deploy("STAGE=supervisor make auto_update")
     } else if (job_name == "develop") {
       stage "Upload binary to repository"
       sh "make upload"
