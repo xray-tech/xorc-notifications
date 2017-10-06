@@ -16,7 +16,7 @@ use amqp::protocol::basic::BasicProperties;
 use apns2::client::{ProviderResponse, Response, APNSStatus, APNSError};
 use protobuf::core::Message;
 use metrics::{CALLBACKS_COUNTER, CALLBACKS_INFLIGHT, RESPONSE_TIMES_HISTOGRAM};
-use logger::GelfLogger;
+use logger::{GelfLogger, LogAction};
 use gelf::{Message as GelfMessage, Level as GelfLevel, Error as GelfError};
 use consumer_supervisor::CONSUMER_FAILURES;
 use std::str::FromStr;
@@ -299,6 +299,7 @@ impl ResponseProducer {
 
     fn log_result(&self, title: &str, event: &PushNotification, response: Option<&Response>) -> Result<(), GelfError> {
         let mut test_msg = GelfMessage::new(String::from(title));
+        test_msg.set_metadata("action", format!("{:?}", LogAction::NotificationResult))?;
 
         test_msg.set_full_message(format!("{:?}", event)).
             set_level(GelfLevel::Informational).

@@ -9,7 +9,7 @@ use config::Config;
 use std::sync::mpsc::Sender;
 use consumer_supervisor::{ApnsConnection, CONSUMER_FAILURES};
 use producer::ApnsResponse;
-use logger::GelfLogger;
+use logger::{GelfLogger, LogAction};
 use gelf::{Message as GelfMessage, Level as GelfLevel};
 
 pub struct Consumer {
@@ -94,11 +94,12 @@ impl Consumer {
                                                        false, // nowait
                                                        Table::new())?;
 
-        let mut log_msg = GelfMessage::new(String::from("Consumer created"));
+        let mut log_msg = GelfMessage::new(String::from("Consumer started"));
 
         log_msg.set_full_message(String::from("Consumer is created and will now start consuming messages"));
         log_msg.set_level(GelfLevel::Informational);
 
+        let _ = log_msg.set_metadata("action", format!("{:?}", LogAction::ConsumerStart));
         let _ = log_msg.set_metadata("app_id", format!("{}", self.app_id));
         let _ = log_msg.set_metadata("consumer_name", format!("{}", consumer_name));
         let _ = log_msg.set_metadata("queue", format!("{}", self.queue));
@@ -141,6 +142,7 @@ impl ApnsConsumer {
             Ok(duration) if duration > Duration::from_secs(120) => {
                 let mut log_msg = GelfMessage::new(String::from("Consumer connection health check"));
                 let _ = log_msg.set_metadata("app_id", format!("{}", self.app_id));
+                let _ = log_msg.set_metadata("action", format!("{:?}", LogAction::ConsumerHealthCheck));
 
                 log_msg.set_full_message(String::from("Sending an HTTP2 ping to check the connection health"));
 
