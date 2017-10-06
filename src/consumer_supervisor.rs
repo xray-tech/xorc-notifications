@@ -182,7 +182,7 @@ impl ConsumerSupervisor {
         let control = Arc::new(AtomicBool::new(true));
         let mut log_msg = GelfMessage::new(String::from("Supervisor consumer update"));
         let _ = log_msg.set_metadata("app_id", format!("{}", app.id));
-        let _ = log_msg.set_metadata("action", format!("{:?}", LogAction::ConsumerDelete));
+        let _ = log_msg.set_metadata("action", format!("{:?}", LogAction::ConsumerCreate));
 
         log_msg.set_level(GelfLevel::Informational);
         log_msg.set_full_message(String::from("A new consumer is created"));
