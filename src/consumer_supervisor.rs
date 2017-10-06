@@ -15,7 +15,7 @@ use std::thread;
 use certificate_registry::{Application, ApnsConnectionParameters, ApnsEndpoint, CertificateError};
 use consumer::Consumer;
 use std::io::Cursor;
-use logger::GelfLogger;
+use logger::{GelfLogger, LogAction};
 use gelf::{Message as GelfMessage, Level as GelfLevel};
 
 lazy_static! {
@@ -112,7 +112,8 @@ impl ConsumerSupervisor {
                             Err(e) => {
                                 let mut log_msg = GelfMessage::new(format!("Error in creating a consumer"));
                                 let _ = log_msg.set_metadata("app_id", format!("{}", app.id));
-                                let _ = log_msg.set_metadata("error", format!("ConsumerCreateError"));
+                                let _ = log_msg.set_metadata("successful", format!("false"));
+                                let _ = log_msg.set_metadata("action", format!("{:?}", LogAction::ConsumerCreate));
 
                                 log_msg.set_full_message(format!("{:?}", e));
                                 log_msg.set_level(GelfLevel::Error);
@@ -134,6 +135,7 @@ impl ConsumerSupervisor {
         for app_id in failures.drain() {
             let mut log_msg = GelfMessage::new(String::from("Supervisor consumer failure and restart"));
             let _ = log_msg.set_metadata("app_id", format!("{}", app_id));
+            let _ = log_msg.set_metadata("action", format!("{:?}", LogAction::ConsumerRestart));
 
             log_msg.set_full_message(String::from("Consumer connection to APNS is unstable and the consumer is restarted."));
             log_msg.set_level(GelfLevel::Informational);
@@ -148,6 +150,7 @@ impl ConsumerSupervisor {
             if !updates.contains_key(app_id) {
                 let mut log_msg = GelfMessage::new(String::from("Supervisor consumer delete"));
                 let _ = log_msg.set_metadata("app_id", format!("{}", app_id));
+                let _ = log_msg.set_metadata("action", format!("{:?}", LogAction::ConsumerDelete));
 
                 log_msg.set_full_message(String::from("Consumer is disabled, application deleted or certificate expired"));
                 log_msg.set_level(GelfLevel::Informational);
@@ -179,6 +182,7 @@ impl ConsumerSupervisor {
         let control = Arc::new(AtomicBool::new(true));
         let mut log_msg = GelfMessage::new(String::from("Supervisor consumer update"));
         let _ = log_msg.set_metadata("app_id", format!("{}", app.id));
+        let _ = log_msg.set_metadata("action", format!("{:?}", LogAction::ConsumerDelete));
 
         log_msg.set_level(GelfLevel::Informational);
         log_msg.set_full_message(String::from("A new consumer is created"));

@@ -5,6 +5,16 @@ use gelf::{Logger, UdpBackend, Message, Error};
 use std::env;
 use env_logger;
 
+#[derive(Debug)]
+pub enum LogAction {
+    ConsumerCreate,
+    ConsumerRestart,
+    ConsumerStart,
+    ConsumerDelete,
+    ConsumerHealthCheck,
+    NotificationResult,
+}
+
 pub struct GelfLogger {
     connection: Option<Logger>,
     filter: LogLevelFilter,
