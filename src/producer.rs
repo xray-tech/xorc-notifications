@@ -1,12 +1,11 @@
 use std::sync::Arc;
-use std::time::{SystemTime, Duration};
 use web_push::WebPushError;
-use std::cmp;
 use amqp::{Session, Channel, Table, Basic, Options};
 use amqp::protocol::basic::BasicProperties;
 use events::push_notification::PushNotification;
 use events::webpush_notification::WebPushResult;
-use hyper::header::RetryAfter;
+use events::notification_result::NotificationResult;
+use events::header::Header;
 use config::Config;
 use futures::sync::mpsc::Receiver;
 use futures::Stream;
@@ -15,7 +14,7 @@ use std::sync::atomic::AtomicBool;
 use metrics::{CALLBACKS_COUNTER, CALLBACKS_INFLIGHT};
 use notifier::ProducerMessage;
 use logger::GelfLogger;
-use gelf::{Message as GelfMessage, Level as GelfLevel, Error as GelfError};
+use time;
 
 pub struct ResponseProducer {
     channel: Channel,
@@ -81,14 +80,16 @@ impl ResponseProducer {
         }
     }
 
-    fn publish(&mut self, event: PushNotification, routing_key: &str) {
-        self.channel.basic_publish(
-            &*self.config.rabbitmq.response_exchange,
-            routing_key,
-            false,   // mandatory
-            false,   // immediate
-            BasicProperties { ..Default::default() },
-            event.write_to_bytes().expect("Couldn't serialize a protobuf event")).expect("Couldn't publish to RabbitMQ");
+    fn handle_ok(&mut self, mut event: PushNotification) {
+        CALLBACKS_COUNTER.with_label_values(&["success"]).inc();
+
+        let _ = self.logger.log_push_result("Successfully sent a push notification", &event, None);
+        let mut web_result = WebPushResult::new();
+
+        web_result.set_successful(true);
+        event.mut_web().set_response(web_result);
+
+        self.publish(event, "no_retry");
     }
 
     fn handle_no_cert(&mut self, mut event: PushNotification) {
@@ -104,118 +105,95 @@ impl ResponseProducer {
     }
 
     fn handle_error(&mut self, mut event: PushNotification, error: WebPushError) {
-        let _ = self.log_result("Error sending a push notification", &event, Some(&error));
+        let _ = self.logger.log_push_result("Error sending a push notification", &event, Some(&error));
 
         let mut web_result = WebPushResult::new();
+
         web_result.set_successful(false);
-
-        let routing_key = match error {
-            WebPushError::ServerError(retry_after) => {
-                let duration: u32 = match retry_after {
-                    Some(RetryAfter::Delay(duration)) =>
-                        cmp::max(0 as u64, duration.as_secs()) as u32,
-                    Some(RetryAfter::DateTime(retry_time)) => {
-                        let retry_system_time: SystemTime = retry_time.into();
-                        let retry_duration = retry_system_time.duration_since(SystemTime::now()).unwrap_or(Duration::new(0, 0));
-                        cmp::max(0 as u64, retry_duration.as_secs()) as u32
-                    }
-                    None => {
-                        if event.has_retry_count() {
-                            let base: u32 = 2;
-                            base.pow(event.get_retry_count())
-                        } else {
-                            1
-                        }
-                    }
-                };
-
-                event.set_retry_after(duration);
-                "retry"
-            },
-            WebPushError::TimeoutError => {
-                let duration: u32 = if event.has_retry_count() {
-                    let base: u32 = 2;
-                    base.pow(event.get_retry_count())
-                } else {
-                    1
-                };
-
-                event.set_retry_after(duration);
-                "retry"
-            }
-            WebPushError::Unauthorized => {
-                CALLBACKS_COUNTER.with_label_values(&["unauthorized"]).inc();
-                "no_retry"
-            },
-            WebPushError::Unspecified => {
-                CALLBACKS_COUNTER.with_label_values(&["crypto_error"]).inc();
-                "no_retry"
-            },
-            WebPushError::BadRequest => {
-                CALLBACKS_COUNTER.with_label_values(&["bed_request"]).inc();
-                "no_retry"
-            },
-            WebPushError::PayloadTooLarge => {
-                CALLBACKS_COUNTER.with_label_values(&["payload_too_large"]).inc();
-                "no_retry"
-            },
-            WebPushError::EndpointNotValid => {
-                CALLBACKS_COUNTER.with_label_values(&["endpoint_not_valid"]).inc();
-                "no_retry"
-            },
-            WebPushError::EndpointNotFound => {
-                CALLBACKS_COUNTER.with_label_values(&["endpoint_not_found"]).inc();
-                "no_retry"
-            },
-            WebPushError::InvalidUri => {
-                CALLBACKS_COUNTER.with_label_values(&["invalid_uri"]).inc();
-                "no_retry"
-            },
-            _ => {
-                CALLBACKS_COUNTER.with_label_values(&["unknown"]).inc();
-                "no_retry"
-            },
-        };
+        web_result.set_error((&error).into());
 
         event.mut_web().set_response(web_result);
 
-        self.publish(event, routing_key);
-    }
-
-    fn handle_ok(&mut self, mut event: PushNotification) {
-        let _ = self.log_result("Successfully sent a push notification", &event, None);
-        CALLBACKS_COUNTER.with_label_values(&["success"]).inc();
-        let mut web_result = WebPushResult::new();
-        web_result.set_successful(true);
-
-        event.mut_web().set_response(web_result);
-
-        self.publish(event, "no_retry");
-    }
-
-    fn log_result(&self, title: &str, event: &PushNotification, error: Option<&WebPushError>) -> Result<(), GelfError> {
-        let mut test_msg = GelfMessage::new(String::from(title));
-
-        test_msg.set_full_message(format!("{:?}", event)).
-            set_level(GelfLevel::Informational).
-            set_metadata("correlation_id", format!("{}", event.get_correlation_id()))?.
-            set_metadata("device_token",   format!("{}", event.get_device_token()))?.
-            set_metadata("app_id",         format!("{}", event.get_application_id()))?.
-            set_metadata("campaign_id",    format!("{}", event.get_campaign_id()))?.
-            set_metadata("event_source",   String::from(event.get_header().get_source()))?;
+        CALLBACKS_COUNTER.with_label_values(&[error.short_description()]).inc();
 
         match error {
-            Some(error_msg) => {
-                test_msg.set_metadata("successful", String::from("false"))?;
-                test_msg.set_metadata("error", format!("{:?}", error_msg))?;
+            WebPushError::ServerError(retry_after) => {
+                match retry_after {
+                    Some(duration) =>
+                        event.set_retry_after(duration.as_secs() as u32),
+                    None => {
+                        let duration = Self::calculate_retry_duration(&event);
+                        event.set_retry_after(duration)
+                    }
+                }
+
+                self.publish(event, "retry");
+            },
+            WebPushError::TimeoutError => {
+                let duration = Self::calculate_retry_duration(&event);
+
+                event.set_retry_after(duration);
+
+                self.publish(event, "retry");
             },
             _ => {
-                test_msg.set_metadata("successful", String::from("true"))?;
+                self.publish(event, "no_retry");
+            },
+        };
+    }
+
+    fn publish(&mut self, event: PushNotification, routing_key: &str) {
+        if event.has_exchange() && routing_key == "no_retry" {
+            let response_routing_key = if event.has_response_recipient_id() {
+                event.get_response_recipient_id()
+            } else {
+                ""
+            };
+
+            let response = event.get_web().get_response();
+            let current_time = time::get_time();
+
+            let mut header = Header::new();
+            header.set_created_at((current_time.sec as i64 * 1000) +
+                                  (current_time.nsec as i64 / 1000 / 1000));
+            header.set_source(String::from("webpush"));
+            header.set_recipient_id(String::from(response_routing_key));
+
+            let mut result_event = NotificationResult::new();
+            result_event.set_header(header);
+            result_event.set_universe(String::from(event.get_universe()));
+
+            if response.has_error() {
+                result_event.set_successful(false);
+                result_event.set_error((&response.get_error()).into());
+            } else {
+                result_event.set_successful(true);
             }
+
+            self.channel.basic_publish(
+                event.get_exchange(),
+                response_routing_key,
+                false,   // mandatory
+                false,   // immediate
+                BasicProperties { ..Default::default() },
+                result_event.write_to_bytes().expect("Couldn't serialize a protobuf event")).expect("Couldn't publish to RabbitMQ");
         }
 
-        self.logger.log_message(test_msg);
+        self.channel.basic_publish(
+            &*self.config.rabbitmq.response_exchange,
+            routing_key,
+            false,   // mandatory
+            false,   // immediate
+            BasicProperties { ..Default::default() },
+            event.write_to_bytes().expect("Couldn't serialize a protobuf event")).expect("Couldn't publish to RabbitMQ");
+    }
 
-        Ok(())
+    fn calculate_retry_duration(event: &PushNotification) -> u32 {
+        if event.has_retry_count() {
+            let base: u32 = 2;
+            base.pow(event.get_retry_count())
+        } else {
+            1
+        }
     }
 }

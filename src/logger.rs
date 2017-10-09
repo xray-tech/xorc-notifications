@@ -4,6 +4,9 @@ use log::{LogLevelFilter};
 use gelf::{Logger, UdpBackend, Message, Error};
 use std::env;
 use env_logger;
+use gelf::{Message as GelfMessage, Level as GelfLevel, Error as GelfError};
+use events::push_notification::PushNotification;
+use web_push::WebPushError;
 
 pub struct GelfLogger {
     connection: Option<Logger>,
@@ -50,7 +53,7 @@ impl GelfLogger {
     pub fn log_message(&self, msg: Message) {
         match self.connection {
             Some(ref connection) => {
-                connection.log_message(msg)  
+                connection.log_message(msg)
             },
             None => {
                 let level: LogLevelFilter = msg.level().into();
@@ -68,5 +71,31 @@ impl GelfLogger {
                 }
             }
         }
+    }
+
+    pub fn log_push_result(&self, title: &str, event: &PushNotification, error: Option<&WebPushError>) -> Result<(), GelfError> {
+        let mut test_msg = GelfMessage::new(String::from(title));
+
+        test_msg.set_full_message(format!("{:?}", event)).
+            set_level(GelfLevel::Informational).
+            set_metadata("correlation_id", format!("{}", event.get_correlation_id()))?.
+            set_metadata("device_token",   format!("{}", event.get_device_token()))?.
+            set_metadata("app_id",         format!("{}", event.get_application_id()))?.
+            set_metadata("campaign_id",    format!("{}", event.get_campaign_id()))?.
+            set_metadata("event_source",   String::from(event.get_header().get_source()))?;
+
+        match error {
+            Some(error_msg) => {
+                test_msg.set_metadata("successful", String::from("false"))?;
+                test_msg.set_metadata("error", format!("{:?}", error_msg))?;
+            },
+            _ => {
+                test_msg.set_metadata("successful", String::from("true"))?;
+            }
+        }
+
+        self.log_message(test_msg);
+
+        Ok(())
     }
 }
