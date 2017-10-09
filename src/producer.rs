@@ -166,6 +166,7 @@ impl ResponseProducer {
             if response.has_error() {
                 result_event.set_successful(false);
                 result_event.set_error((&response.get_error()).into());
+                result_event.set_reason(format!("{:?}", response.get_error()));
             } else {
                 result_event.set_successful(true);
             }
