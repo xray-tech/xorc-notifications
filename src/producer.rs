@@ -162,6 +162,7 @@ impl ResponseProducer {
             let mut result_event = NotificationResult::new();
             result_event.set_header(header);
             result_event.set_universe(String::from(event.get_universe()));
+            result_event.set_correlation_id(String::from(event.get_correlation_id()));
 
             if response.has_error() {
                 result_event.set_successful(false);
