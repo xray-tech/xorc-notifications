@@ -117,6 +117,7 @@ impl ResponseProducer {
                 },
                 _ => {
                     result_event.set_successful(false);
+                    result_event.set_reason(format!("{:?}", response.get_status()));
                     result_event.set_error(NotificationResult_Error::Other);
                 },
             }
