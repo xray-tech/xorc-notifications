@@ -89,6 +89,7 @@ impl ResponseProducer {
                                   (current_time.nsec as i64 / 1000 / 1000));
             header.set_source(String::from("apns"));
             header.set_recipient_id(String::from(response_routing_key));
+            header.set_field_type(String::from("notification.NotificationResult"));
 
             let mut result_event = NotificationResult::new();
             result_event.set_header(header);
