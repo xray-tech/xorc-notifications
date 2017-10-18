@@ -86,18 +86,17 @@ impl ResponseProducer {
         }
     }
 
+    fn can_reply(event: &PushNotification, routing_key: &str) -> bool {
+        event.has_exchange() && routing_key == "no_retry" && event.has_response_recipient_id()
+    }
+
     fn publish(&mut self, event: PushNotification, routing_key: &str) {
-        if event.has_exchange() && routing_key == "no_retry" {
-            let response_routing_key = if event.has_response_recipient_id() {
-                event.get_response_recipient_id()
-            } else {
-                ""
-            };
+        if Self::can_reply(&event, routing_key) {
+            let response_routing_key = event.get_response_recipient_id();
+            let response             = event.get_google().get_response();
+            let current_time         = time::get_time();
+            let mut header           = Header::new();
 
-            let response = event.get_google().get_response();
-            let current_time = time::get_time();
-
-            let mut header = Header::new();
             header.set_created_at((current_time.sec as i64 * 1000) +
                                   (current_time.nsec as i64 / 1000 / 1000));
             header.set_source(String::from("fcm"));
