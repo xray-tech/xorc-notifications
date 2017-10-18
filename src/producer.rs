@@ -4,7 +4,7 @@ use amqp::{Session, Channel, Table, Basic, Options};
 use amqp::protocol::basic::BasicProperties;
 use events::push_notification::PushNotification;
 use events::webpush_notification::WebPushResult;
-use events::notification_result::NotificationResult;
+use events::notification_result::{NotificationResult, NotificationResult_Error};
 use events::header::Header;
 use config::Config;
 use futures::sync::mpsc::Receiver;
@@ -167,8 +167,16 @@ impl ResponseProducer {
             if response.has_error() {
                 result_event.set_successful(false);
                 result_event.set_error((&response.get_error()).into());
+
+                if let NotificationResult_Error::Unsubscribed = result_event.get_error() {
+                    result_event.set_delete_user(true);
+                } else {
+                    result_event.set_delete_user(false);
+                }
+
                 result_event.set_reason(format!("{:?}", response.get_error()));
             } else {
+                result_event.set_delete_user(false);
                 result_event.set_successful(true);
             }
 
