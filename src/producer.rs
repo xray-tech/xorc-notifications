@@ -110,13 +110,16 @@ impl ResponseProducer {
 
             match response.get_status() {
                 Success => {
+                    result_event.set_delete_user(false);
                     result_event.set_successful(true);
                 },
                 NotRegistered => {
+                    result_event.set_delete_user(true);
                     result_event.set_successful(false);
                     result_event.set_error(NotificationResult_Error::Unsubscribed);
                 },
                 _ => {
+                    result_event.set_delete_user(false);
                     result_event.set_successful(false);
                     result_event.set_reason(format!("{:?}", response.get_status()));
                     result_event.set_error(NotificationResult_Error::Other);
