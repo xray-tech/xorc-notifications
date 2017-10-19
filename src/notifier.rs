@@ -81,7 +81,9 @@ impl Notifier {
                 acc
             });
             if !data.is_empty() {
-                message.data(data);
+                if let Err(e) = message.data(&data) {
+                    error!("Couldn't encode custom data to the message: {:?}", e);
+                }
             }
             message.notification(builder.finalize());
 
@@ -93,7 +95,9 @@ impl Notifier {
                 acc
             });
 
-            message.data(data);
+            if let Err(e) = message.data(&data) {
+                error!("Couldn't encode custom data to the message: {:?}", e);
+            }
         }
 
         if notification.get_registration_ids().len() > 0 {
