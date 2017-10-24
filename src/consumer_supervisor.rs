@@ -3,20 +3,19 @@ use config::Config;
 use std::sync::atomic::{AtomicBool, Ordering};
 use certificate_registry::CertificateRegistry;
 use std::time::Duration;
-use std::sync::mpsc::Sender;
-use producer::ApnsResponse;
 use std::thread::JoinHandle;
 use time::Timespec;
-use notifier::{CertificateNotifier, TokenNotifier};
-use apns2::apns_token::APNSToken;
-use apns2::client::APNSError;
-use std::collections::{HashSet, HashMap};
+use apns2::error;
+use std::collections::{HashMap, HashSet};
 use std::thread;
-use certificate_registry::{Application, ApnsConnectionParameters, ApnsEndpoint, CertificateError};
+use certificate_registry::{ApnsConnectionParameters, Application, CertificateError};
 use consumer::Consumer;
-use std::io::Cursor;
 use logger::{GelfLogger, LogAction};
-use gelf::{Message as GelfMessage, Level as GelfLevel};
+use gelf::{Level as GelfLevel, Message as GelfMessage};
+use futures::sync::oneshot;
+use futures::Future;
+use futures::sync::mpsc;
+use producer::ApnsData;
 
 lazy_static! {
     pub static ref CONSUMER_FAILURES: Mutex<HashSet<i32>> = Mutex::new(HashSet::new());
@@ -27,36 +26,27 @@ pub struct ConsumerSupervisor {
     control: Arc<AtomicBool>,
     certificate_registry: CertificateRegistry,
     wait_duration: Duration,
-    tx_response: Sender<ApnsResponse>,
     consumers: HashMap<i32, ApplicationConsumer>,
-    logger: Arc<GelfLogger>
+    logger: Arc<GelfLogger>,
+    producer_tx: mpsc::Sender<ApnsData>,
 }
 
 struct ApplicationConsumer {
-    handles: Option<Vec<JoinHandle<()>>>,
-    app_id: i32,
-    control: Arc<AtomicBool>,
+    handle: Option<JoinHandle<()>>,
     updated_at: Option<Timespec>,
+    control: oneshot::Sender<()>,
 }
 
-impl Drop for ApplicationConsumer {
+impl Drop for ConsumerSupervisor {
     fn drop(&mut self) {
-        self.control.store(false, Ordering::Relaxed);
-
-        if let Some(handles) = self.handles.take() {
-            for handle in handles {
+        for (_, mut consumer) in self.consumers.drain() {
+            consumer.control.send(()).unwrap();
+            if let Some(handle) = consumer.handle.take() {
                 handle.thread().unpark();
                 handle.join().unwrap();
             }
         }
-
-        info!("Consumer dropped for application #{}", self.app_id);
     }
-}
-
-pub enum ApnsConnection {
-    Certificate { notifier: CertificateNotifier, topic: String },
-    Token { notifier: TokenNotifier, token: APNSToken, topic: String }
 }
 
 enum ConsumerAction {
@@ -65,7 +55,12 @@ enum ConsumerAction {
 }
 
 impl ConsumerSupervisor {
-    pub fn new(config: Arc<Config>, control: Arc<AtomicBool>, tx_response: Sender<ApnsResponse>, logger: Arc<GelfLogger>) -> ConsumerSupervisor {
+    pub fn new(
+        config: Arc<Config>,
+        control: Arc<AtomicBool>,
+        producer_tx: mpsc::Sender<ApnsData>,
+        logger: Arc<GelfLogger>,
+    ) -> ConsumerSupervisor {
         let registry = CertificateRegistry::new(config.clone());
 
         ConsumerSupervisor {
@@ -73,9 +68,9 @@ impl ConsumerSupervisor {
             control: control,
             certificate_registry: registry,
             wait_duration: Duration::from_secs(5),
-            tx_response: tx_response,
             consumers: HashMap::new(),
             logger: logger,
+            producer_tx: producer_tx,
         }
     }
 
@@ -89,13 +84,12 @@ impl ConsumerSupervisor {
                     self.update_existing(updates);
 
                     thread::park_timeout(self.wait_duration);
-                },
+                }
                 Err(e) => {
                     error!("Error in fetching application data: {:?}", e);
                     self.control.store(false, Ordering::Relaxed);
                 }
             }
-
         }
     }
 
@@ -105,23 +99,23 @@ impl ConsumerSupervisor {
                 match self.consumers.get(&app.id) {
                     Some(consumer) if consumer.updated_at == app.updated_at => {
                         acc.insert(app.id, ConsumerAction::NoUpdate);
-                    },
-                    _ => {
-                        match self.create_consumer(&app) {
-                            Ok(consumer) => {
-                                acc.insert(app.id, ConsumerAction::Update(consumer));
-                            },
-                            Err(e) => {
-                                let mut log_msg = GelfMessage::new(format!("Error in creating a consumer"));
-                                let _ = log_msg.set_metadata("app_id", format!("{}", app.id));
-                                let _ = log_msg.set_metadata("successful", format!("false"));
-                                let _ = log_msg.set_metadata("action", format!("{:?}", LogAction::ConsumerCreate));
+                    }
+                    _ => match self.create_consumer(app.clone()) {
+                        Ok(consumer) => {
+                            acc.insert(app.id, ConsumerAction::Update(consumer));
+                        }
+                        Err(e) => {
+                            let mut log_msg =
+                                GelfMessage::new(format!("Error in creating a consumer"));
+                            let _ = log_msg.set_metadata("app_id", format!("{}", app.id));
+                            let _ = log_msg.set_metadata("successful", format!("false"));
+                            let _ = log_msg
+                                .set_metadata("action", format!("{:?}", LogAction::ConsumerCreate));
 
-                                log_msg.set_full_message(format!("{:?}", e));
-                                log_msg.set_level(GelfLevel::Error);
+                            log_msg.set_full_message(format!("{:?}", e));
+                            log_msg.set_level(GelfLevel::Error);
 
-                                self.logger.log_message(log_msg);
-                            }
+                            self.logger.log_message(log_msg);
                         }
                     },
                 }
@@ -135,11 +129,14 @@ impl ConsumerSupervisor {
         let mut failures = CONSUMER_FAILURES.lock().unwrap();
 
         for app_id in failures.drain() {
-            let mut log_msg = GelfMessage::new(String::from("Supervisor consumer failure and restart"));
+            let mut log_msg =
+                GelfMessage::new(String::from("Supervisor consumer failure and restart"));
             let _ = log_msg.set_metadata("app_id", format!("{}", app_id));
             let _ = log_msg.set_metadata("action", format!("{:?}", LogAction::ConsumerRestart));
 
-            log_msg.set_full_message(String::from("Consumer connection to APNS is unstable and the consumer is restarted."));
+            log_msg.set_full_message(String::from(
+                "Consumer connection to APNS is unstable and the consumer is restarted.",
+            ));
             log_msg.set_level(GelfLevel::Informational);
             self.logger.log_message(log_msg);
 
@@ -154,7 +151,9 @@ impl ConsumerSupervisor {
                 let _ = log_msg.set_metadata("app_id", format!("{}", app_id));
                 let _ = log_msg.set_metadata("action", format!("{:?}", LogAction::ConsumerDelete));
 
-                log_msg.set_full_message(String::from("Consumer is disabled, application deleted or certificate expired"));
+                log_msg.set_full_message(String::from(
+                    "Consumer is disabled, application deleted or certificate expired",
+                ));
                 log_msg.set_level(GelfLevel::Informational);
                 self.logger.log_message(log_msg);
             }
@@ -174,14 +173,15 @@ impl ConsumerSupervisor {
             match update {
                 ConsumerAction::Update(consumer) => {
                     self.consumers.insert(id, consumer);
-                },
-                _ => ()
+                }
+                _ => (),
             }
-        };
+        }
     }
 
-    fn create_consumer(&self, app: &Application) -> Result<ApplicationConsumer, APNSError> {
-        let control = Arc::new(AtomicBool::new(true));
+    fn create_consumer(&self, app: Application) -> Result<ApplicationConsumer, error::Error> {
+        let (control_tx, control_rx) = oneshot::channel();
+
         let mut log_msg = GelfMessage::new(String::from("Supervisor consumer update"));
         let _ = log_msg.set_metadata("app_id", format!("{}", app.id));
         let _ = log_msg.set_metadata("action", format!("{:?}", LogAction::ConsumerCreate));
@@ -189,64 +189,52 @@ impl ConsumerSupervisor {
         log_msg.set_level(GelfLevel::Informational);
         log_msg.set_full_message(String::from("A new consumer is created"));
 
-        let mut handles: Vec<JoinHandle<_>> = Vec::new();
+        match app.connection_parameters {
+            ApnsConnectionParameters::Certificate {
+                pkcs12: _,
+                password: _,
+                ref endpoint,
+            } => {
+                let _ = log_msg.set_metadata("endpoint", format!("{:?}", endpoint));
+                let _ = log_msg.set_metadata("connection_type", String::from("certificate"));
+            }
+            ApnsConnectionParameters::Token {
+                pkcs8: _,
+                ref key_id,
+                ref team_id,
+                ref endpoint,
+            } => {
+                let _ = log_msg.set_metadata("key_id", format!("{}", key_id));
+                let _ = log_msg.set_metadata("team_id", format!("{}", team_id));
+                let _ = log_msg.set_metadata("endpoint", format!("{:?}", endpoint));
+                let _ = log_msg.set_metadata("connection_type", String::from("token"));
+            }
+        };
 
-        for _ in 0..app.thread_count {
-            let connection = match app.connection_parameters {
-                ApnsConnectionParameters::Certificate { ref certificate, ref private_key, ref endpoint } => {
-                    let _ = log_msg.set_metadata("endpoint", format!("{:?}", endpoint));
-                    let _ = log_msg.set_metadata("connection_type", String::from("certificate"));
+        let handle = {
+            let config = self.config.clone();
+            let logger = self.logger.clone();
+            let app = app.clone();
+            let app_id = app.id;
+            let control = control_rx.shared();
+            let producer_tx = self.producer_tx.clone();
 
-                    ApnsConnection::Certificate {
-                        notifier: CertificateNotifier::new(
-                            Cursor::new(certificate),
-                            Cursor::new(private_key),
-                            endpoint == &ApnsEndpoint::Sandbox)?,
-                        topic: app.topic.clone(),
-                    }
-                },
-                ApnsConnectionParameters::Token { ref token, ref key_id, ref team_id, ref endpoint } => {
-                    let _ = log_msg.set_metadata("key_id", format!("{}", key_id));
-                    let _ = log_msg.set_metadata("team_id", format!("{}", team_id));
-                    let _ = log_msg.set_metadata("endpoint", format!("{:?}", endpoint));
-                    let _ = log_msg.set_metadata("connection_type", String::from("token"));
+            thread::spawn(move || {
+                let consumer = Consumer::new(config, app, logger);
 
-                    ApnsConnection::Token {
-                        notifier: TokenNotifier::new(
-                            endpoint == &ApnsEndpoint::Sandbox,
-                            self.config.clone())?,
-                        token: APNSToken::new(
-                            Cursor::new(token),
-                            key_id.as_ref(),
-                            team_id.as_ref(), 1200).unwrap(),
-                        topic: app.topic.clone(),
-                    }
+                match consumer.consume(control, producer_tx) {
+                    Ok(_) => info!("Consumer #{} exited normally", app_id),
+                    Err(e) => error!("Couldn't start consumer #{}: {:?}", app_id, e),
                 }
-            };
-
-            let mut consumer = Consumer::new(control.clone(), self.config.clone(), self.logger.clone(), app.id);
-            let tx_response = self.tx_response.clone();
-
-            handles.push(thread::spawn(move || {
-                match consumer.consume(connection, tx_response) {
-                    Ok(()) => {
-                        info!("Consumer thread exited.");
-                    },
-                    Err(e) => {
-                        error!("Error in consumer thread: {:?}", e);
-                    }
-                }
-            }));
-        }
-
+            })
+        };
 
         self.logger.log_message(log_msg);
 
         Ok(ApplicationConsumer {
-            handles: Some(handles),
-            control: control,
-            app_id: app.id,
+            handle: Some(handle),
             updated_at: app.updated_at,
+            control: control_tx,
         })
     }
 }
