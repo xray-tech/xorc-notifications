@@ -1,18 +1,11 @@
-#[macro_use]
-extern crate log;
+#[macro_use] extern crate log;
+#[macro_use] extern crate prometheus;
+#[macro_use] extern crate lazy_static;
+#[macro_use] extern crate postgres_derive;
+
 extern crate env_logger;
 extern crate gelf;
 extern crate hyper;
-
-#[macro_use]
-extern crate prometheus;
-
-#[macro_use]
-extern crate lazy_static;
-
-#[macro_use]
-extern crate postgres_derive;
-
 extern crate postgres;
 extern crate r2d2;
 extern crate r2d2_postgres;
@@ -24,6 +17,7 @@ extern crate protobuf;
 extern crate toml;
 extern crate rustc_serialize;
 extern crate time;
+extern crate heck;
 
 mod notifier;
 mod events;
@@ -34,6 +28,7 @@ mod config;
 mod certificate_registry;
 mod producer;
 mod consumer_supervisor;
+mod error;
 
 use logger::GelfLogger;
 use metrics::StatisticsServer;
