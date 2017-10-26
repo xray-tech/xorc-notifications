@@ -85,6 +85,12 @@ impl GelfLogger {
             set_metadata("event_source",   String::from(event.get_header().get_source()))?;
 
         match error {
+            Some(&WebPushError::BadRequest(Some(ref error_info))) => {
+                test_msg.set_metadata("successful", String::from("false"))?;
+                test_msg.set_metadata("error", String::from("BadRequest"))?;
+                test_msg.set_metadata("errno", format!("{}", error_info.errno))?;
+                test_msg.set_metadata("long_error", format!("{}", error_info.message))?;
+            }
             Some(error_msg) => {
                 test_msg.set_metadata("successful", String::from("false"))?;
                 test_msg.set_metadata("error", format!("{:?}", error_msg))?;

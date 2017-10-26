@@ -7,7 +7,7 @@ impl<'a> From<&'a WebPushError> for WebPushResult_Error {
         match *e {
             WebPushError::Unspecified      => WebPushResult_Error::Unspecified,
             WebPushError::Unauthorized     => WebPushResult_Error::Unauthorized,
-            WebPushError::BadRequest       => WebPushResult_Error::BadRequest,
+            WebPushError::BadRequest(_)    => WebPushResult_Error::BadRequest,
             WebPushError::ServerError(_)   => WebPushResult_Error::ServerError,
             WebPushError::NotImplemented   => WebPushResult_Error::NotImplemented,
             WebPushError::InvalidUri       => WebPushResult_Error::InvalidUri,

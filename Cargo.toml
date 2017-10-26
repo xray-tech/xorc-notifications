@@ -5,7 +5,7 @@ authors = ["Julius de Bruijn <julius.debruijn@360dialog.com>"]
 build = "build.rs"
 
 [dependencies]
-web-push = "*"
+web-push = { git = "https://github.com/pimeys/rust-web-push.git" }
 tokio-core = "0.1"
 tokio-signal = "0.1"
 hyper = "0.11"
