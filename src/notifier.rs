@@ -63,7 +63,7 @@ impl Notifier {
         let auth = web.get_auth().from_base64().unwrap();
         let p256dh = web.get_p256dh().from_base64().unwrap();
 
-        let mut message = WebPushMessageBuilder::new(pn.get_device_token(), &auth, &p256dh);
+        let mut message = WebPushMessageBuilder::new(pn.get_device_token(), &auth, &p256dh)?;
 
         if web.has_payload() {
             message.set_payload(ContentEncoding::AesGcm, web.get_payload().as_bytes());
