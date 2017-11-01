@@ -1100,7 +1100,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 [[package]]
 name = "web-push"
 version = "0.2.0"
-source = "git+https://github.com/pimeys/rust-web-push.git#56342acf3cec4c5cd5f8f5723e3778ac33cb45f2"
+source = "git+https://github.com/pimeys/rust-web-push.git#5ece01088d72525abd78a88a8a1247785f60d277"
 dependencies = [
  "futures 0.1.17 (registry+https://github.com/rust-lang/crates.io-index)",
  "hyper 0.11.6 (registry+https://github.com/rust-lang/crates.io-index)",
