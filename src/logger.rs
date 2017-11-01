@@ -1,10 +1,10 @@
 use std::sync::Arc;
 use config::Config;
 use log::{LogLevelFilter};
-use gelf::{Logger, UdpBackend, Message, Error};
 use std::env;
 use env_logger;
-use gelf::{Message as GelfMessage, Level as GelfLevel, Error as GelfError};
+use gelf::{Message as GelfMessage, Level as GelfLevel, Error as GelfError, Logger, UdpBackend};
+use hyper::Uri;
 use events::push_notification::PushNotification;
 use web_push::WebPushError;
 
@@ -14,7 +14,7 @@ pub struct GelfLogger {
 }
 
 impl GelfLogger {
-    pub fn new(config: Arc<Config>) -> Result<GelfLogger, Error> {
+    pub fn new(config: Arc<Config>) -> Result<GelfLogger, GelfError> {
         let log_level_filter = match env::var("RUST_LOG") {
             Ok(val) => match val.as_ref() {
                 "info"  => LogLevelFilter::Info,
@@ -50,7 +50,7 @@ impl GelfLogger {
         }
     }
 
-    pub fn log_message(&self, msg: Message) {
+    pub fn log_message(&self, msg: GelfMessage) {
         match self.connection {
             Some(ref connection) => {
                 connection.log_message(msg)
@@ -83,6 +83,12 @@ impl GelfLogger {
             set_metadata("app_id",         format!("{}", event.get_application_id()))?.
             set_metadata("campaign_id",    format!("{}", event.get_campaign_id()))?.
             set_metadata("event_source",   String::from(event.get_header().get_source()))?;
+
+        if let Ok(uri) = event.get_device_token().parse::<Uri>() {
+            if let Some(host) = uri.host() {
+                test_msg.set_metadata("push_service", String::from(host))?;
+            };
+        };
 
         match error {
             Some(&WebPushError::BadRequest(Some(ref error_info))) => {
