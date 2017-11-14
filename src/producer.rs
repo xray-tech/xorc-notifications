@@ -119,7 +119,7 @@ impl ResponseProducer {
                 false,   // mandatory
                 false,   // immediate
                 BasicProperties { ..Default::default() },
-                event.write_to_bytes().expect("Couldn't serialize a protobuf event")).expect("Couldn't publish to RabbitMQ");
+                result_event.write_to_bytes().expect("Couldn't serialize a protobuf event")).expect("Couldn't publish to RabbitMQ");
         }
 
         self.channel.basic_publish(
