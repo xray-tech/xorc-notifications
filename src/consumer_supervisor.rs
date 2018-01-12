@@ -33,7 +33,7 @@ pub struct ConsumerSupervisor {
 }
 
 struct ApplicationConsumer {
-    handle: Option<JoinHandle<()>>,
+    handles: Option<Vec<JoinHandle<()>>>,
     app_id: i32,
     control: Arc<AtomicBool>,
     updated_at: Option<Timespec>,
@@ -43,9 +43,11 @@ impl Drop for ApplicationConsumer {
     fn drop(&mut self) {
         self.control.store(false, Ordering::Relaxed);
 
-        if let Some(handle) = self.handle.take() {
-            handle.thread().unpark();
-            handle.join().unwrap();
+        if let Some(handles) = self.handles.take() {
+            for handle in handles {
+                handle.thread().unpark();
+                handle.join().unwrap();
+            }
         }
 
         info!("Consumer dropped for application #{}", self.app_id);
@@ -187,56 +189,61 @@ impl ConsumerSupervisor {
         log_msg.set_level(GelfLevel::Informational);
         log_msg.set_full_message(String::from("A new consumer is created"));
 
-        let connection = match app.connection_parameters {
-            ApnsConnectionParameters::Certificate { ref certificate, ref private_key, ref endpoint } => {
-                let _ = log_msg.set_metadata("endpoint", format!("{:?}", endpoint));
-                let _ = log_msg.set_metadata("connection_type", String::from("certificate"));
+        let mut handles: Vec<JoinHandle<_>> = Vec::new();
 
-                ApnsConnection::Certificate {
-                    notifier: CertificateNotifier::new(
-                        Cursor::new(certificate),
-                        Cursor::new(private_key),
-                        endpoint == &ApnsEndpoint::Sandbox)?,
-                    topic: app.topic.clone(),
-                }
-            },
-            ApnsConnectionParameters::Token { ref token, ref key_id, ref team_id, ref endpoint } => {
-                let _ = log_msg.set_metadata("key_id", format!("{}", key_id));
-                let _ = log_msg.set_metadata("team_id", format!("{}", team_id));
-                let _ = log_msg.set_metadata("endpoint", format!("{:?}", endpoint));
-                let _ = log_msg.set_metadata("connection_type", String::from("token"));
+        for _ in 0..app.thread_count {
+            let connection = match app.connection_parameters {
+                ApnsConnectionParameters::Certificate { ref certificate, ref private_key, ref endpoint } => {
+                    let _ = log_msg.set_metadata("endpoint", format!("{:?}", endpoint));
+                    let _ = log_msg.set_metadata("connection_type", String::from("certificate"));
 
-                ApnsConnection::Token {
-                    notifier: TokenNotifier::new(
-                        endpoint == &ApnsEndpoint::Sandbox,
-                        self.config.clone())?,
-                    token: APNSToken::new(
-                        Cursor::new(token),
-                        key_id.as_ref(),
-                        team_id.as_ref(), 1200).unwrap(),
-                    topic: app.topic.clone(),
-                }
-            }
-        };
-
-        let mut consumer = Consumer::new(control.clone(), self.config.clone(), self.logger.clone(), app.id);
-        let tx_response = self.tx_response.clone();
-
-        let handle = thread::spawn(move || {
-            match consumer.consume(connection, tx_response) {
-                Ok(()) => {
-                    info!("Consumer thread exited.");
+                    ApnsConnection::Certificate {
+                        notifier: CertificateNotifier::new(
+                            Cursor::new(certificate),
+                            Cursor::new(private_key),
+                            endpoint == &ApnsEndpoint::Sandbox)?,
+                        topic: app.topic.clone(),
+                    }
                 },
-                Err(e) => {
-                    error!("Error in consumer thread: {:?}", e);
+                ApnsConnectionParameters::Token { ref token, ref key_id, ref team_id, ref endpoint } => {
+                    let _ = log_msg.set_metadata("key_id", format!("{}", key_id));
+                    let _ = log_msg.set_metadata("team_id", format!("{}", team_id));
+                    let _ = log_msg.set_metadata("endpoint", format!("{:?}", endpoint));
+                    let _ = log_msg.set_metadata("connection_type", String::from("token"));
+
+                    ApnsConnection::Token {
+                        notifier: TokenNotifier::new(
+                            endpoint == &ApnsEndpoint::Sandbox,
+                            self.config.clone())?,
+                        token: APNSToken::new(
+                            Cursor::new(token),
+                            key_id.as_ref(),
+                            team_id.as_ref(), 1200).unwrap(),
+                        topic: app.topic.clone(),
+                    }
                 }
-            }
-        });
+            };
+
+            let mut consumer = Consumer::new(control.clone(), self.config.clone(), self.logger.clone(), app.id);
+            let tx_response = self.tx_response.clone();
+
+            handles.push(thread::spawn(move || {
+                match consumer.consume(connection, tx_response) {
+                    Ok(()) => {
+                        info!("Consumer thread exited.");
+                    },
+                    Err(e) => {
+                        error!("Error in consumer thread: {:?}", e);
+                    }
+                }
+            }));
+        }
+
 
         self.logger.log_message(log_msg);
 
         Ok(ApplicationConsumer {
-            handle: Some(handle),
+            handles: Some(handles),
             control: control,
             app_id: app.id,
             updated_at: app.updated_at,

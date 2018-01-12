@@ -63,6 +63,7 @@ pub struct Application {
     pub topic: String,
     pub id: i32,
     pub updated_at: Option<Timespec>,
+    pub thread_count: i32,
 }
 
 impl CertificateRegistry {
@@ -72,7 +73,7 @@ impl CertificateRegistry {
 
         let all_apps = "SELECT ios.certificate, ios.private_key, ios.apns_topic, ios.updated_at, ios.cert_is_sandbox, \
                         ios.token_der, ios.token_is_sandbox, ios.key_id, ios.team_id, ios.connection_type, \
-                        app.id
+                        app.id, ios.thread_count
                         FROM applications app
                         INNER JOIN ios_applications ios ON app.id = ios.application_id \
                         WHERE ios.enabled IS TRUE AND app.deleted_at IS NULL \
@@ -127,7 +128,8 @@ impl CertificateRegistry {
                     connection_parameters: connection_params,
                     topic: row.get("apns_topic"),
                     id: row.get("id"),
-                    updated_at: row.get("updated_at")
+                    updated_at: row.get("updated_at"),
+                    thread_count: row.get("thread_count"),
                 }
             }).collect()
         });
