@@ -1,6 +1,6 @@
 {
   "id": "push-notifications/apns2/production",
-  "instances": 64,
+  "instances": 32,
   "cpus": 0.02,
   "mem": 256,
   "labels": {
