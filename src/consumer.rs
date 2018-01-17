@@ -8,6 +8,7 @@ use protobuf::parse_from_bytes;
 use config::Config;
 use std::sync::mpsc::Sender;
 use consumer_supervisor::{ApnsConnection, CONSUMER_FAILURES};
+use metrics::REQUEST_COUNTER;
 use producer::ApnsResponse;
 use logger::{GelfLogger, LogAction};
 use gelf::{Message as GelfMessage, Level as GelfLevel};
@@ -184,6 +185,8 @@ impl AmqpConsumer for ApnsConsumer {
                 channel.basic_ack(deliver.delivery_tag, false).unwrap();
 
                 if let Ok(event) = parse_from_bytes::<PushNotification>(&body) {
+                    REQUEST_COUNTER.with_label_values(&[event.get_application_id(), event.get_campaign_id()]).inc();
+
                     let response = match self.connection {
                         ApnsConnection::Certificate { ref notifier, ref topic } => {
                             Some(notifier.send(&event, topic))
