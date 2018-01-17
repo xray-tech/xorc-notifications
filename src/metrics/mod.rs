@@ -8,8 +8,14 @@ use hyper::mime::Mime;
 lazy_static! {
     pub static ref CALLBACKS_COUNTER: CounterVec = register_counter_vec!(
         "push_notifications_total",
-        "Total number of push notifications made.",
+        "Total number of push notifications responded.",
         &["status"]
+    ).unwrap();
+
+    pub static ref REQUEST_COUNTER: CounterVec = register_counter_vec!(
+        "push_notifications_requested",
+        "Total number of push notification requests made.",
+        &["status", "app_id", "campaign_id"]
     ).unwrap();
 
     pub static ref CALLBACKS_INFLIGHT: Gauge = register_gauge!(
