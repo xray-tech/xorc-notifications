@@ -185,7 +185,9 @@ impl AmqpConsumer for ApnsConsumer {
                 channel.basic_ack(deliver.delivery_tag, false).unwrap();
 
                 if let Ok(event) = parse_from_bytes::<PushNotification>(&body) {
-                    REQUEST_COUNTER.with_label_values(&[event.get_application_id(), event.get_campaign_id()]).inc();
+                    REQUEST_COUNTER.with_label_values(&["requested",
+                                                        event.get_application_id(),
+                                                        event.get_campaign_id()]).inc();
 
                     let response = match self.connection {
                         ApnsConnection::Certificate { ref notifier, ref topic } => {

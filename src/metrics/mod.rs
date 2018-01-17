@@ -15,7 +15,7 @@ lazy_static! {
     pub static ref REQUEST_COUNTER: CounterVec = register_counter_vec!(
         "push_notifications_requested",
         "Total number of push notification requests made.",
-        &["app_id", "campaign_id"]
+        &["status", "app_id", "campaign_id"]
     ).unwrap();
 
     pub static ref CALLBACKS_INFLIGHT: Gauge = register_gauge!(
