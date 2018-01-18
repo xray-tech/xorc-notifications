@@ -6,7 +6,7 @@ use tokio_core::reactor::Core;
 use futures::sync::mpsc::{Sender, Receiver};
 use futures::{Future, Stream, Sink};
 use producer::FcmData;
-use metrics::RESPONSE_TIMES_HISTOGRAM;
+use metrics::{RESPONSE_TIMES_HISTOGRAM, REQUEST_COUNTER};
 
 pub struct Notifier {}
 
@@ -25,6 +25,10 @@ impl Notifier {
 
             match api_key {
                 Some(ref key) => {
+                    REQUEST_COUNTER.with_label_values(&["requested",
+                                                        event.get_application_id(),
+                                                        event.get_campaign_id()]).inc();
+
                     let message = Self::build_message(&event, key);
                     let timer = RESPONSE_TIMES_HISTOGRAM.start_timer();
 

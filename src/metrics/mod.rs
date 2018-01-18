@@ -17,6 +17,12 @@ lazy_static! {
         &["status"]
     ).unwrap();
 
+    pub static ref REQUEST_COUNTER: CounterVec = register_counter_vec!(
+        "push_notifications_requested",
+        "Total number of push notification requests made.",
+        &["status", "app_id", "campaign_id"]
+    ).unwrap();
+
     pub static ref RESPONSE_TIMES_HISTOGRAM: Histogram = register_histogram!(
         "http_request_latency_seconds",
         "The HTTP request latencies in seconds"
