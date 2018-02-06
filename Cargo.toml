@@ -6,7 +6,7 @@ build = "build.rs"
 
 [dependencies]
 fcm = { git = "https://github.com/panicbit/fcm-rust",  branch = "serde" }
-hyper = "=0.11.16"
+hyper = "=0.11.15"
 protobuf = "1.0.22"
 chan-signal = "0.1.6"
 argparse = "0.2.1"
