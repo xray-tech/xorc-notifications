@@ -5,30 +5,30 @@ authors = ["Julius de Bruijn <julius.debruijn@360dialog.com>"]
 build = "build.rs"
 
 [dependencies]
-apns2 = { git = "https://github.com/pimeys/apns2", branch = "new_btls" }
-protobuf = "1.2.1"
-chan-signal = "0.1.6"
-argparse = "0.2.1"
-env_logger = "0.3.3"
+apns2 = { git = "https://github.com/pimeys/apns2", branch = "tokio" }
+protobuf = "1.2"
+chan-signal = "0.1"
+argparse = "0.2"
+env_logger = "0.5"
 gelf = "0.2.0"
 log = "0.3.6"
-toml = "0.1.30"
-rustc-serialize = "0.3.19"
-time = "0.1.35"
-hyper = "0.9.13"
+toml = "0.1"
+rustc-serialize = "0.3"
+time = "0.1"
+hyper = "0.11"
 r2d2 = "0.7"
 r2d2_postgres = "0.13"
-prometheus = "0.3"
-lazy_static = "0.1.*"
+prometheus = "0.2"
+lazy_static = "0.1"
 postgres-derive = "0.3"
 heck = "0.3"
+futures = "0.1"
+serde_json = "1.0"
+tokio-core = "0.1.*"
+tokio-signal = "0.1.2"
+lapin-futures = "0.10"
 
 [dependencies.postgres]
 version = "0.15"
 default-features = true
 features = ["with-time"]
-
-[dependencies.amqp]
-git = "https://github.com/pimeys/rust-amqp"
-branch = "consumer_clean_exit"
-default-features = false

@@ -32,8 +32,10 @@ impl Config {
             for err in &parser.errors {
                 let (loline, locol) = parser.to_linecol(err.lo);
                 let (hiline, hicol) = parser.to_linecol(err.hi);
-                println!("{}:{}:{}-{}:{} error: {}",
-                         path, loline, locol, hiline, hicol, err.desc);
+                println!(
+                    "{}:{}:{}-{}:{} error: {}",
+                    path, loline, locol, hiline, hicol, err.desc
+                );
             }
             panic!("Exiting server");
         }
