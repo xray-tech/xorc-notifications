@@ -65,7 +65,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 [[package]]
 name = "apns2"
 version = "0.1.0"
-source = "git+https://github.com/pimeys/apns2?branch=tokio#fa7340468ffebc3320397958e90af69f145aad06"
+source = "git+https://github.com/pimeys/apns2?branch=tokio#f2fdd68d61d2870741b5ba3ca792d7eb8464ff48"
 dependencies = [
  "argparse 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "base64 0.7.0 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -88,6 +88,7 @@ dependencies = [
  "tokio-io 0.1.5 (registry+https://github.com/rust-lang/crates.io-index)",
  "tokio-rustls 0.5.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "tokio-service 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tokio-timer 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "webpki 0.18.0-alpha (registry+https://github.com/rust-lang/crates.io-index)",
  "webpki-roots 0.14.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
@@ -118,6 +119,7 @@ dependencies = [
  "time 0.1.39 (registry+https://github.com/rust-lang/crates.io-index)",
  "tokio-core 0.1.12 (registry+https://github.com/rust-lang/crates.io-index)",
  "tokio-signal 0.1.4 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tokio-timer 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "toml 0.1.30 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 

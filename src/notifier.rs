@@ -9,6 +9,8 @@ use tokio_core::reactor::Handle;
 use certificate_registry::ApnsConnectionParameters;
 use apns2::client::Client;
 use std::io::Cursor;
+use std::time::Duration;
+use tokio_timer::Timeout;
 
 pub struct Notifier {
     client: Client,
@@ -42,8 +44,8 @@ impl Notifier {
         Ok(Notifier { client })
     }
 
-    pub fn notify(&self, event: &PushNotification) -> FutureResponse {
-        self.client.send(self.gen_payload(event))
+    pub fn notify(&self, event: &PushNotification) -> Timeout<FutureResponse> {
+        self.client.send_with_timeout(self.gen_payload(event), Duration::from_secs(15))
     }
 
     fn gen_payload(&self, event: &PushNotification) -> Payload {

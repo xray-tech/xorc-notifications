@@ -226,9 +226,13 @@ impl Consumer {
                             if let Ok(event) = parse_from_bytes::<PushNotification>(&message.data) {
                                 let tx = tx_producer.clone();
 
-                                REQUEST_COUNTER.with_label_values(&["requested",
-                                                                    event.get_application_id(),
-                                                                    event.get_campaign_id()]).inc();
+                                REQUEST_COUNTER
+                                    .with_label_values(&[
+                                        "requested",
+                                        event.get_application_id(),
+                                        event.get_campaign_id(),
+                                    ])
+                                    .inc();
                                 CALLBACKS_INFLIGHT.inc();
                                 let timer = RESPONSE_TIMES_HISTOGRAM.start_timer();
 

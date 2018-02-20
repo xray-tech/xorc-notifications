@@ -105,6 +105,9 @@ impl ConsumerSupervisor {
                             acc.insert(app.id, ConsumerAction::Update(consumer));
                         }
                         Err(e) => {
+                            let mut failures = CONSUMER_FAILURES.lock().unwrap();
+                            failures.insert(app.id);
+
                             let mut log_msg =
                                 GelfMessage::new(format!("Error in creating a consumer"));
                             let _ = log_msg.set_metadata("app_id", format!("{}", app.id));

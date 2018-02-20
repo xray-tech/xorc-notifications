@@ -25,6 +25,7 @@ extern crate serde_json;
 extern crate time;
 extern crate tokio_core;
 extern crate tokio_signal;
+extern crate tokio_timer;
 extern crate toml;
 
 mod notifier;

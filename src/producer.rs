@@ -128,14 +128,55 @@ impl ResponseProducer {
                                             response,
                                         )
                                     }
-                                    (_, Err(e)) => {
-                                        error!("Unexpected happened: {:?}", e);
+                                    (event, Err(Error::TimeoutError)) => {
+                                        let _ = Self::log_result(
+                                            "Timeout when sending a push notification",
+                                            &self.logger,
+                                            &event,
+                                            None,
+                                        );
+
+                                        Self::mark_failure(event.get_application_id());
+
+                                        Self::handle_fatal(
+                                            &channel,
+                                            &self.config.rabbitmq.response_exchange,
+                                            ApnsResult_Status::Timeout,
+                                            event,
+                                        )
+                                    }
+                                    (event, Err(Error::ConnectionError)) => {
+                                        let _ = Self::log_result(
+                                            "Connection error",
+                                            &self.logger,
+                                            &event,
+                                            None,
+                                        );
+
+                                        Self::mark_failure(event.get_application_id());
+
+                                        Self::handle_fatal(
+                                            &channel,
+                                            &self.config.rabbitmq.response_exchange,
+                                            ApnsResult_Status::MissingChannel,
+                                            event,
+                                        )
+                                    }
+                                    (event, Err(e)) => {
+                                        error!("Fatal error when sending a push notification, restarting consumer: {:?}", e);
+
+                                        Self::mark_failure(event.get_application_id());
+
+                                        Self::handle_fatal(
+                                            &channel,
+                                            &self.config.rabbitmq.response_exchange,
+                                            ApnsResult_Status::Unknown,
+                                            event,
+                                        );
+
                                         Box::new(ok(Some(false)))
                                     }
-                                }.then(|r| {
-                                    println!("RESULT: {:?}", r);
-                                    ok(())
-                                });
+                                }.then(|_| ok(()));
 
                                 handle.spawn(work);
 
@@ -237,6 +278,33 @@ impl ResponseProducer {
         Self::publish(channel, event, exchange, "no_retry")
     }
 
+    fn handle_fatal(
+        channel: &Channel<TcpStream>,
+        exchange: &str,
+        status: ApnsResult_Status,
+        mut event: PushNotification,
+    ) -> Box<Future<Item = Option<bool>, Error = io::Error>> {
+        let mut apns_result = ApnsResult::new();
+        let status_label = format!("{:?}", status).to_snake_case();
+
+        apns_result.set_status(status);
+        apns_result.set_successful(false);
+
+        let retry_after = if event.has_retry_count() {
+            let base: u32 = 2;
+            base.pow(event.get_retry_count())
+        } else {
+            1
+        };
+
+        CALLBACKS_COUNTER.with_label_values(&[&status_label]).inc();
+
+        event.mut_apple().set_result(apns_result);
+        event.set_retry_after(retry_after);
+
+        Self::publish(channel, event, exchange, "retry")
+    }
+
     fn handle_error(
         channel: &Channel<TcpStream>,
         exchange: &str,
@@ -253,14 +321,7 @@ impl ResponseProducer {
             match error.reason {
                 ErrorReason::ExpiredProviderToken
                 | ErrorReason::IdleTimeout
-                | ErrorReason::BadCertificate => match i32::from_str(event.get_application_id()) {
-                    Ok(app_id) => {
-                        let mut failures = CONSUMER_FAILURES.lock().unwrap();
-
-                        failures.insert(app_id);
-                    }
-                    Err(_) => error!("Faulty app-id: {}", event.get_application_id()),
-                },
+                | ErrorReason::BadCertificate => Self::mark_failure(event.get_application_id()),
                 _ => (),
             }
 
@@ -304,8 +365,17 @@ impl ResponseProducer {
         };
 
         event.mut_apple().set_result(apns_result);
-        println!("Sending: {:?}", event);
         Self::publish(channel, event, exchange, routing_key)
+    }
+
+    fn mark_failure(app_id: &str) {
+        match i32::from_str(app_id) {
+            Ok(id) => {
+                let mut failures = CONSUMER_FAILURES.lock().unwrap();
+                failures.insert(id);
+            }
+            _ => (),
+        }
     }
 
     fn log_result<'a>(
