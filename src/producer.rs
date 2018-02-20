@@ -103,7 +103,7 @@ impl ResponseProducer {
                                 let work = match item {
                                     (event, Ok(response)) => {
                                         let _ = Self::log_result(
-                                            "Success",
+                                            "Successfully sent a push notification",
                                             &self.logger,
                                             &event,
                                             Some(&response),
@@ -116,7 +116,7 @@ impl ResponseProducer {
                                     }
                                     (event, Err(Error::ResponseError(response))) => {
                                         let _ = Self::log_result(
-                                            "Error",
+                                            "Error sending a push notification",
                                             &self.logger,
                                             &event,
                                             Some(&response),
@@ -280,7 +280,7 @@ impl ResponseProducer {
 
         match response.error {
             Some(ref reason) => {
-                let reason_label = format!("{:?}", reason).to_snake_case();
+                let reason_label = format!("{:?}", reason.reason).to_snake_case();
                 CALLBACKS_COUNTER.with_label_values(&[&reason_label]).inc();
             }
             None => {
@@ -340,7 +340,7 @@ impl ResponseProducer {
                     test_msg.set_metadata("error", format!("{:?}", error))?;
 
                     if let Some(ref reason) = r.error {
-                        test_msg.set_metadata("reason", format!("{:?}", reason))?;
+                        test_msg.set_metadata("reason", format!("{:?}", reason.reason))?;
                     }
                 }
             }
