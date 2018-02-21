@@ -172,9 +172,7 @@ impl ResponseProducer {
                                             &self.config.rabbitmq.response_exchange,
                                             ApnsResult_Status::Unknown,
                                             event,
-                                        );
-
-                                        Box::new(ok(Some(false)))
+                                        )
                                     }
                                 }.then(|_| ok(()));
 
