@@ -49,6 +49,7 @@ impl Config {
 #[derive(RustcEncodable, RustcDecodable, Debug)]
 pub struct GeneralConfig {
     pub certificates: String,
+    pub application_whitelist: Option<Vec<i32>>,
 }
 
 #[derive(RustcEncodable, RustcDecodable, Debug)]

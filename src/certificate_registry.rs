@@ -28,7 +28,7 @@ impl From<Error> for CertificateError {
 
 pub struct CertificateRegistry {
     pool: r2d2::Pool<PostgresConnectionManager>,
-    all_apps_query: &'static str,
+    all_apps_query: String,
 }
 
 #[derive(FromSql)]
@@ -65,20 +65,33 @@ impl CertificateRegistry {
         let manager = PostgresConnectionManager::new(config.postgres.uri.as_str(), TlsMode::None)
             .expect("Couldn't connect to PostgreSQL");
 
-        let all_apps = "SELECT ios.pkcs12, ios.pkcs12_password, ios.apns_topic, ios.updated_at, \
-                        ios.cert_is_sandbox, ios.token_p8, ios.token_is_sandbox, ios.key_id, \
-                        ios.team_id, ios.connection_type, app.id
-                        FROM applications app
-                        INNER JOIN ios_applications ios ON app.id = ios.application_id \
-                        WHERE ios.enabled IS TRUE AND app.deleted_at IS NULL \
-                        AND ((ios.connection_type = 'certificate' \
-                              AND ios.certificate IS NOT NULL \
-                              AND ios.private_key IS NOT NULL \
-                              AND ios.expiry_at > current_timestamp) \
-                             OR (ios.connection_type = 'token' \
-                                 AND ios.token_der IS NOT NULL \
-                                 AND ios.key_id IS NOT NULL \
-                                 AND ios.team_id IS NOT NULL))";
+        let mut all_apps = String::from(
+            "SELECT ios.pkcs12, ios.pkcs12_password, ios.apns_topic, ios.updated_at, \
+                ios.cert_is_sandbox, ios.token_p8, ios.token_is_sandbox, ios.key_id, \
+                ios.team_id, ios.connection_type, app.id
+                FROM applications app
+                INNER JOIN ios_applications ios ON app.id = ios.application_id \
+                WHERE ios.enabled IS TRUE AND app.deleted_at IS NULL \
+                AND ((ios.connection_type = 'certificate' \
+                    AND ios.certificate IS NOT NULL \
+                    AND ios.private_key IS NOT NULL \
+                    AND ios.expiry_at > current_timestamp) \
+                    OR (ios.connection_type = 'token' \
+                        AND ios.token_der IS NOT NULL \
+                        AND ios.key_id IS NOT NULL \
+                        AND ios.team_id IS NOT NULL))"
+        );
+
+        if let Some(ref whitelist) = config.general.application_whitelist {
+            let ids: Vec<String> =
+                whitelist.iter().map(|i| i.to_string()).collect();
+
+            all_apps = format!(
+                "{} AND ios.application_id IN ({})",
+                all_apps,
+                ids.join(", ")
+            );
+        };
 
         let psql_config = r2d2::Config::builder()
             .pool_size(config.postgres.pool_size)
@@ -106,7 +119,7 @@ impl CertificateRegistry {
         let connection = self.pool
             .get()
             .expect("Error getting a PostgreSQL connection from the pool");
-        let applications = connection.query(self.all_apps_query, &[]).map(|rows| {
+        let applications = connection.query(&self.all_apps_query, &[]).map(|rows| {
             rows.iter()
                 .map(|row| {
                     let connection_type: String = String::from_utf8(
