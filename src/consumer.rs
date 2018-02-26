@@ -94,7 +94,7 @@ impl Consumer {
         let handle = core.handle();
 
         let connection_parameters = self.application.connection_parameters.clone();
-        let notifier = Notifier::new(&handle, connection_parameters)?;
+        let notifier = Notifier::new(&handle, connection_parameters, self.application.topic.clone())?;
         let queue_name = format!("{}_{}", self.config.rabbitmq.queue, self.application.id);
         let routing_key = format!(
             "{}_{}",

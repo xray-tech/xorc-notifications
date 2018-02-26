@@ -14,12 +14,14 @@ use tokio_timer::Timeout;
 
 pub struct Notifier {
     client: Client,
+    topic: String,
 }
 
 impl Notifier {
     pub fn new(
         handle: &Handle,
         connection_parameters: ApnsConnectionParameters,
+        topic: String,
     ) -> Result<Notifier, Error> {
         let client = match connection_parameters {
             ApnsConnectionParameters::Certificate {
@@ -41,7 +43,7 @@ impl Notifier {
             )?,
         };
 
-        Ok(Notifier { client })
+        Ok(Notifier { client, topic })
     }
 
     pub fn notify(&self, event: &PushNotification) -> Timeout<FutureResponse> {
@@ -70,6 +72,8 @@ impl Notifier {
         }
         if headers.has_apns_topic() {
             options.apns_topic = Some(String::from(headers.get_apns_topic()));
+        } else {
+            options.apns_topic = Some(self.topic.clone());
         }
 
         let mut payload = if notification_data.has_localized() {
