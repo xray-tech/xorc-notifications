@@ -25,7 +25,7 @@
       "maxConsecutiveFailures": 2
     }
   ],
-  "cmd": "./apns2-$commit -c /configs/staging/dmp/apns2/tokio.toml",
+  "cmd": "./apns2-$commit -c /configs/production/dmp/apns2/tokio.toml",
   "fetch": [
     {
       "uri": "http://artifactory.service.consul:8081/artifactory/apns2/tokio/apns2-$commit",
