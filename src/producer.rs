@@ -238,7 +238,7 @@ impl ResponseProducer {
                 response_routing_key,
                 &result_event.write_to_bytes().unwrap(),
                 &BasicPublishOptions {
-                    mandatory: true,
+                    mandatory: false,
                     immediate: false,
                     ..Default::default()
                 },
@@ -250,7 +250,7 @@ impl ResponseProducer {
                 routing_key,
                 &event.write_to_bytes().unwrap(),
                 &BasicPublishOptions {
-                    mandatory: true,
+                    mandatory: false,
                     immediate: false,
                     ..Default::default()
                 },
