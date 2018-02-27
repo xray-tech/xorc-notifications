@@ -142,7 +142,7 @@ impl ResponseProducer {
                                             None,
                                         );
 
-                                        Self::mark_failure(event.get_application_id());
+                                        //Self::mark_failure(event.get_application_id());
 
                                         Self::handle_fatal(
                                             &channel,
@@ -159,7 +159,7 @@ impl ResponseProducer {
                                             None,
                                         );
 
-                                        Self::mark_failure(event.get_application_id());
+                                        //Self::mark_failure(event.get_application_id());
 
                                         Self::handle_fatal(
                                             &channel,
