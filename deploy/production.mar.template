@@ -1,7 +1,7 @@
 {
   "id": "push-notifications/apns2/production",
-  "instances": 64,
-  "cpus": 0.02,
+  "instances": 6,
+  "cpus": 1,
   "mem": 256,
   "labels": {
     "collectd_app": "apns2-production",
