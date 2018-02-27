@@ -418,13 +418,13 @@ impl ResponseProducer {
             .set_full_message(format!("{:?}", event))
             .set_level(GelfLevel::Informational)
             .set_metadata("correlation_id", format!("{}", event.get_correlation_id()))?
-        .set_metadata("device_token", format!("{}", event.get_device_token()))?
-        .set_metadata("app_id", format!("{}", event.get_application_id()))?
-        .set_metadata("campaign_id", format!("{}", event.get_campaign_id()))?
-        .set_metadata(
-            "event_source",
-            String::from(event.get_header().get_source()),
-        )?;
+            .set_metadata("device_token", format!("{}", event.get_device_token()))?
+            .set_metadata("app_id", format!("{}", event.get_application_id()))?
+            .set_metadata("campaign_id", format!("{}", event.get_campaign_id()))?
+            .set_metadata(
+                "event_source",
+                String::from(event.get_header().get_source()),
+            )?;
 
         if let Some(r) = response {
             match r.code {
