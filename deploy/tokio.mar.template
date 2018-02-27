@@ -9,7 +9,7 @@
     "commit_id": "$commit"
   },
   "env": {
-    "RUST_LOG": "info",
+    "RUST_LOG": "apns=trace",
     "RUST_GELF": "on",
     "RUST_ENV": "tokio",
     "RUST_BACKTRACE": "1"
