@@ -1,20 +1,17 @@
 {
-  "id": "push-notifications/apns2/production",
-  "instances": 6,
-  "cpus": 1,
+  "id": "push-notifications/apns2/tokio",
+  "instances": 1,
+  "cpus": 0.02,
   "mem": 256,
   "labels": {
-    "collectd_app": "apns2-production",
-    "overrideTaskName": "apns2-production",
+    "collectd_app": "apns2-tokio",
+    "overrideTaskName": "apns2-tokio",
     "commit_id": "$commit"
   },
-  "constraints": [
-    ["hostname", "GROUP_BY", "4"]
-  ],
   "env": {
     "RUST_LOG": "info",
     "RUST_GELF": "on",
-    "RUST_ENV": "production",
+    "RUST_ENV": "tokio",
     "RUST_BACKTRACE": "1"
   },
   "healthChecks": [
@@ -28,10 +25,10 @@
       "maxConsecutiveFailures": 2
     }
   ],
-  "cmd": "./apns2-$commit -c /configs/production/dmp/apns2/production.toml",
+  "cmd": "./apns2-$commit -c /configs/production/dmp/apns2/tokio.toml",
   "fetch": [
     {
-      "uri": "http://artifactory.service.consul:8081/artifactory/apns2/production/apns2-$commit",
+      "uri": "http://artifactory.service.consul:8081/artifactory/apns2/tokio/apns2-$commit",
       "executable": true,
       "extract": false
     }

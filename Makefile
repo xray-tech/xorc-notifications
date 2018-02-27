@@ -17,8 +17,8 @@ ifeq ($(STAGE), production)
 	stage = production
 endif
 
-ifeq ($(STAGE), supervisor)
-	stage = supervisor
+ifeq ($(STAGE), tokio)
+	stage = tokio
 endif
 
 config = deploy/$(stage).mar.template

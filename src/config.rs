@@ -32,8 +32,10 @@ impl Config {
             for err in &parser.errors {
                 let (loline, locol) = parser.to_linecol(err.lo);
                 let (hiline, hicol) = parser.to_linecol(err.hi);
-                println!("{}:{}:{}-{}:{} error: {}",
-                         path, loline, locol, hiline, hicol, err.desc);
+                println!(
+                    "{}:{}:{}-{}:{} error: {}",
+                    path, loline, locol, hiline, hicol, err.desc
+                );
             }
             panic!("Exiting server");
         }
@@ -47,6 +49,7 @@ impl Config {
 #[derive(RustcEncodable, RustcDecodable, Debug)]
 pub struct GeneralConfig {
     pub certificates: String,
+    pub application_whitelist: Option<Vec<i32>>,
 }
 
 #[derive(RustcEncodable, RustcDecodable, Debug)]
