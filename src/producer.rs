@@ -28,7 +28,6 @@ use time;
 use metrics::*;
 use consumer_supervisor::CONSUMER_FAILURES;
 use chan;
-use std::time::Duration;
 
 pub type ApnsData = (PushNotification, Result<Response, Error>);
 
