@@ -119,6 +119,7 @@ impl ResponseProducer {
                                             &self.logger,
                                             &event,
                                             Some(&response),
+                                            None,
                                         );
                                         Self::handle_response(
                                             &channel,
@@ -132,6 +133,7 @@ impl ResponseProducer {
                                             &self.logger,
                                             &event,
                                             Some(&response),
+                                            None,
                                         );
                                         Self::handle_error(
                                             &channel,
@@ -146,6 +148,7 @@ impl ResponseProducer {
                                             &self.logger,
                                             &event,
                                             None,
+                                            Some(Error::TimeoutError),
                                         );
 
                                         //Self::mark_failure(event.get_application_id());
@@ -163,6 +166,7 @@ impl ResponseProducer {
                                             &self.logger,
                                             &event,
                                             None,
+                                            Some(Error::ConnectionError),
                                         );
 
                                         //Self::mark_failure(event.get_application_id());
@@ -410,6 +414,7 @@ impl ResponseProducer {
         logger: &Arc<GelfLogger>,
         event: &PushNotification,
         response: Option<&Response>,
+        error: Option<Error>
     ) -> Result<(), GelfError> {
         let mut test_msg = GelfMessage::new(String::from(title));
         test_msg.set_metadata("action", format!("{:?}", LogAction::NotificationResult))?;
@@ -443,7 +448,10 @@ impl ResponseProducer {
             }
         } else {
             test_msg.set_metadata("successful", String::from("false"))?;
-            test_msg.set_metadata("error", String::from("MissingCertificateOrToken"))?;
+
+            if let Some(e) = error {
+                test_msg.set_metadata("error", format!("{:?}", e))?;
+            }
         }
 
         logger.log_message(test_msg);
