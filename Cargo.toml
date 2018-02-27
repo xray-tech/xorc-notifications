@@ -5,7 +5,7 @@ authors = ["Julius de Bruijn <julius.debruijn@360dialog.com>"]
 build = "build.rs"
 
 [dependencies]
-fcm = "0.2"
+fcm = { git = "https://github.com/panicbit/fcm-rust.git" }
 hyper = "0.11"
 protobuf = "1.0.22"
 chan-signal = "0.1.6"
