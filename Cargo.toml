@@ -7,7 +7,8 @@ build = "build.rs"
 [dependencies]
 apns2 = { git = "https://github.com/pimeys/apns2" }
 protobuf = "1.2"
-chan-signal = "0.1"
+chan-signal = "0.3"
+chan = "0.1"
 argparse = "0.2"
 env_logger = "0.5"
 gelf = "0.2.0"
@@ -28,7 +29,6 @@ tokio-core = "0.1.*"
 tokio-signal = "0.1.2"
 tokio-timer = "0.1"
 lapin-futures = "0.10"
-nix = "0.10"
 
 [dependencies.postgres]
 version = "0.15"

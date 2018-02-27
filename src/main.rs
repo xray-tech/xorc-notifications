@@ -6,6 +6,8 @@ extern crate log;
 extern crate postgres_derive;
 #[macro_use]
 extern crate prometheus;
+#[macro_use]
+extern crate chan;
 
 extern crate apns2;
 extern crate argparse;
@@ -27,7 +29,6 @@ extern crate tokio_core;
 extern crate tokio_signal;
 extern crate tokio_timer;
 extern crate toml;
-extern crate nix;
 
 mod notifier;
 mod events;
@@ -57,6 +58,7 @@ use producer::ResponseProducer;
 fn main() {
     let mut config_file_location = String::from("./config/config.toml");
     let exit_signal = notify(&[Signal::INT, Signal::TERM]);
+    let (sdone, rdone) = chan::sync(0);
     let (server_tx, server_rx) = oneshot::channel();
 
     let control = Arc::new(AtomicBool::new(true));
@@ -97,7 +99,7 @@ fn main() {
 
         thread::spawn(move || {
             info!("Starting response producer thread...");
-            producer.run(producer_rx);
+            producer.run(producer_rx, sdone);
             info!("Exiting response producer thread...");
         })
     });
@@ -109,15 +111,28 @@ fn main() {
         })
     });
 
-    if let Some(_) = exit_signal.recv() {
-        info!("Quitting the Apple Push Notification service");
+    chan_select! {
+        exit_signal.recv() -> signal => {
+            info!("Received signal: {:?}", signal);
 
-        server_tx.send(()).unwrap();
-        control.store(false, Ordering::Relaxed);
+            server_tx.send(()).unwrap();
+            control.store(false, Ordering::Relaxed);
 
-        for thread in threads {
-            thread.thread().unpark();
-            thread.join().unwrap();
+            for thread in threads {
+                thread.thread().unpark();
+                thread.join().unwrap();
+            }
+        },
+        rdone.recv() => {
+            info!("We killed ourselves, goodbye!");
+
+            server_tx.send(()).unwrap();
+            control.store(false, Ordering::Relaxed);
+
+            for thread in threads {
+                thread.thread().unpark();
+                thread.join().unwrap();
+            }
         }
     }
 }

@@ -27,7 +27,8 @@ use std::str::FromStr;
 use time;
 use metrics::*;
 use consumer_supervisor::CONSUMER_FAILURES;
-use nix::sys::signal;
+use chan;
+use std::time::Duration;
 
 pub type ApnsData = (PushNotification, Result<Response, Error>);
 
@@ -44,7 +45,7 @@ impl ResponseProducer {
         }
     }
 
-    pub fn run(&mut self, rx_consumers: Receiver<ApnsData>) {
+    pub fn run(&mut self, rx_consumers: Receiver<ApnsData>, panic_button: chan::Sender<()>) {
         let mut core = Core::new().unwrap();
         let handle = core.handle();
 
@@ -79,8 +80,8 @@ impl ResponseProducer {
                                 info!("Producer heartbeat thread exited cleanly ({:?})", s)  
                             },
                             Err(e) => {
-                                error!("Producer heartbeat thread crashed, sending SIGINT ({:?})", e);
-                                signal::raise(signal::Signal::SIGINT).unwrap();
+                                error!("Producer heartbeat thread crashed, going down... ({:?})", e);
+                                panic_button.send(());
                             },
                         }
                     })
