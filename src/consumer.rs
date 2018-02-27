@@ -21,6 +21,7 @@ use metrics::*;
 use certificate_registry::ApnsConnectionParameters;
 use futures::sync::oneshot;
 use producer::ApnsData;
+use consumer_supervisor::CONSUMER_FAILURES;
 
 pub struct Consumer {
     config: Arc<Config>,
@@ -93,6 +94,7 @@ impl Consumer {
         let mut core = Core::new().unwrap();
         let handle = core.handle();
 
+        let app_id = self.application.id;
         let connection_parameters = self.application.connection_parameters.clone();
         let notifier = Notifier::new(&handle, connection_parameters, self.application.topic.clone())?;
         let queue_name = format!("{}_{}", self.config.rabbitmq.queue, self.application.id);
@@ -112,14 +114,21 @@ impl Consumer {
             .and_then(move |stream| Client::connect(stream, &connection_options))
             .and_then(|(client, heartbeat_future_fn)| {
                 let heartbeat_client = client.clone();
-
                 thread::Builder::new()
                     .name("heartbeat thread".to_string())
                     .spawn(move || {
-                        Core::new()
+                        let heartbeat_core = Core::new()
                             .unwrap()
-                            .run(heartbeat_future_fn(&heartbeat_client))
-                            .unwrap();
+                            .run(heartbeat_future_fn(&heartbeat_client));
+
+                        match heartbeat_core {
+                            Ok(_) => info!("Consumer #{} hearbeat core exited successfully", app_id),
+                            Err(e) => {
+                                error!("Consumer #{} heartbeat core crashed, restarting... ({:?})", app_id, e);
+                                let mut failures = CONSUMER_FAILURES.lock().unwrap();
+                                failures.insert(app_id);
+                            }
+                        }
                     })
                     .unwrap();
 
