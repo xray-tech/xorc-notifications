@@ -143,8 +143,13 @@ impl ConsumerSupervisor {
             log_msg.set_level(GelfLevel::Informational);
             self.logger.log_message(log_msg);
 
-            if let Some(consumer) = self.consumers.remove(&app_id) {
+            if let Some(mut consumer) = self.consumers.remove(&app_id) {
                 consumer.control.send(()).unwrap();
+
+                if let Some(handle) = consumer.handle.take() {
+                    handle.thread().unpark();
+                    handle.join().unwrap();
+                }
             }
         }
     }

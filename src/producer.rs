@@ -76,7 +76,7 @@ impl ResponseProducer {
                             .run(heartbeat_future_fn(&heartbeat_client))
                         {
                             Ok(s) => {
-                                info!("Producer heartbeat thread exited cleanly ({:?})", s)  
+                                info!("Producer heartbeat thread exited cleanly ({:?})", s);
                             },
                             Err(e) => {
                                 error!("Producer heartbeat thread crashed, going down... ({:?})", e);
