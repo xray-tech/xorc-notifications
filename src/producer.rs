@@ -27,6 +27,7 @@ use std::str::FromStr;
 use time;
 use metrics::*;
 use consumer_supervisor::CONSUMER_FAILURES;
+use nix::sys::signal;
 
 pub type ApnsData = (PushNotification, Result<Response, Error>);
 
@@ -74,8 +75,13 @@ impl ResponseProducer {
                             .unwrap()
                             .run(heartbeat_future_fn(&heartbeat_client))
                         {
-                            Ok(s) => info!("HeartBeat Boom {:?}", s),
-                            Err(e) => error!("I'm dead {:?}", e),
+                            Ok(s) => {
+                                info!("Producer heartbeat thread exited cleanly ({:?})", s)  
+                            },
+                            Err(e) => {
+                                error!("Producer heartbeat thread crashed, sending SIGINT ({:?})", e);
+                                signal::raise(signal::Signal::SIGINT).unwrap();
+                            },
                         }
                     })
                     .unwrap();

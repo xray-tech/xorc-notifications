@@ -27,6 +27,7 @@ extern crate tokio_core;
 extern crate tokio_signal;
 extern crate tokio_timer;
 extern crate toml;
+extern crate nix;
 
 mod notifier;
 mod events;
