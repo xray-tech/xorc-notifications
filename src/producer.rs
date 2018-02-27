@@ -36,6 +36,12 @@ pub struct ResponseProducer {
     logger: Arc<GelfLogger>,
 }
 
+#[derive(Debug, PartialEq)]
+enum Retry {
+    Yes,
+    No,
+}
+
 impl ResponseProducer {
     pub fn new(config: Arc<Config>, logger: Arc<GelfLogger>) -> ResponseProducer {
         ResponseProducer {
@@ -193,75 +199,92 @@ impl ResponseProducer {
         core.run(work).unwrap();
     }
 
-    fn can_reply(event: &PushNotification, routing_key: &str) -> bool {
-        event.has_exchange() && routing_key == "no_retry" && event.has_response_recipient_id()
+    fn can_reply(event: &PushNotification, routing_key: Retry) -> bool {
+        event.has_exchange() && routing_key == Retry::No && event.has_response_recipient_id()
     }
 
     fn publish(
         channel: &Channel<TcpStream>,
         event: PushNotification,
         exchange: &str,
-        routing_key: &str,
+        routing_key: Retry,
     ) -> Box<Future<Item = Option<bool>, Error = io::Error>> {
-        if Self::can_reply(&event, routing_key) {
-            let response_routing_key = event.get_response_recipient_id();
-            let response = event.get_apple().get_result();
-            let current_time = time::get_time();
-            let mut header = Header::new();
+        match routing_key {
+            Retry::Yes => {
+                channel.basic_publish(
+                    exchange,
+                    "retry",
+                    &event.write_to_bytes().unwrap(),
+                    &BasicPublishOptions {
+                        mandatory: false,
+                        immediate: false,
+                        ..Default::default()
+                    },
+                    BasicProperties::default(),
+                )
+            },
+            Retry::No => {
+                if Self::can_reply(&event, routing_key) {
+                    let response_routing_key = event.get_response_recipient_id();
+                    let response = event.get_apple().get_result();
+                    let current_time = time::get_time();
+                    let mut header = Header::new();
 
-            header.set_created_at(
-                (current_time.sec as i64 * 1000) + (current_time.nsec as i64 / 1000 / 1000),
-            );
-            header.set_source(String::from("apns"));
-            header.set_recipient_id(String::from(response_routing_key));
-            header.set_field_type(String::from("notification.NotificationResult"));
+                    header.set_created_at(
+                        (current_time.sec as i64 * 1000) + (current_time.nsec as i64 / 1000 / 1000),
+                    );
+                    header.set_source(String::from("apns"));
+                    header.set_recipient_id(String::from(response_routing_key));
+                    header.set_field_type(String::from("notification.NotificationResult"));
 
-            let mut result_event = NotificationResult::new();
-            result_event.set_header(header);
-            result_event.set_universe(String::from(event.get_universe()));
-            result_event.set_correlation_id(String::from(event.get_correlation_id()));
+                    let mut result_event = NotificationResult::new();
+                    result_event.set_header(header);
+                    result_event.set_universe(String::from(event.get_universe()));
+                    result_event.set_correlation_id(String::from(event.get_correlation_id()));
 
-            match response.get_status() {
-                Success => {
-                    result_event.set_delete_user(false);
-                    result_event.set_successful(true);
-                }
-                Unregistered => {
-                    result_event.set_delete_user(true);
-                    result_event.set_successful(false);
-                    result_event.set_error(NotificationResult_Error::Unsubscribed);
-                }
-                _ => {
-                    result_event.set_delete_user(false);
-                    result_event.set_successful(false);
-                    result_event.set_reason(format!("{:?}", response.get_status()));
-                    result_event.set_error(NotificationResult_Error::Other);
+                    match response.get_status() {
+                        Success => {
+                            result_event.set_delete_user(false);
+                            result_event.set_successful(true);
+                        }
+                        Unregistered => {
+                            result_event.set_delete_user(true);
+                            result_event.set_successful(false);
+                            result_event.set_error(NotificationResult_Error::Unsubscribed);
+                        }
+                        _ => {
+                            result_event.set_delete_user(false);
+                            result_event.set_successful(false);
+                            result_event.set_reason(format!("{:?}", response.get_status()));
+                            result_event.set_error(NotificationResult_Error::Other);
+                        }
+                    }
+
+                    channel.basic_publish(
+                        event.get_exchange(),
+                        response_routing_key,
+                        &result_event.write_to_bytes().unwrap(),
+                        &BasicPublishOptions {
+                            mandatory: false,
+                            immediate: false,
+                            ..Default::default()
+                        },
+                        BasicProperties::default(),
+                    )
+                } else {
+                    channel.basic_publish(
+                        exchange,
+                        "no_retry",
+                        &event.write_to_bytes().unwrap(),
+                        &BasicPublishOptions {
+                            mandatory: false,
+                            immediate: false,
+                            ..Default::default()
+                        },
+                        BasicProperties::default(),
+                    )
                 }
             }
-
-            channel.basic_publish(
-                event.get_exchange(),
-                response_routing_key,
-                &result_event.write_to_bytes().unwrap(),
-                &BasicPublishOptions {
-                    mandatory: false,
-                    immediate: false,
-                    ..Default::default()
-                },
-                BasicProperties::default(),
-            )
-        } else {
-            channel.basic_publish(
-                exchange,
-                routing_key,
-                &event.write_to_bytes().unwrap(),
-                &BasicPublishOptions {
-                    mandatory: false,
-                    immediate: false,
-                    ..Default::default()
-                },
-                BasicProperties::default(),
-            )
         }
     }
 
@@ -279,7 +302,7 @@ impl ResponseProducer {
 
         event.mut_apple().set_result(apns_result);
 
-        Self::publish(channel, event, exchange, "no_retry")
+        Self::publish(channel, event, exchange, Retry::No)
     }
 
     fn handle_fatal(
@@ -306,7 +329,7 @@ impl ResponseProducer {
         event.mut_apple().set_result(apns_result);
         event.set_retry_after(retry_after);
 
-        Self::publish(channel, event, exchange, "retry")
+        Self::publish(channel, event, exchange, Retry::Yes)
     }
 
     fn handle_error(
@@ -324,8 +347,8 @@ impl ResponseProducer {
         if let Some(ref error) = response.error {
             match error.reason {
                 ErrorReason::ExpiredProviderToken
-                | ErrorReason::IdleTimeout
-                | ErrorReason::BadCertificate => Self::mark_failure(event.get_application_id()),
+                    | ErrorReason::IdleTimeout
+                    | ErrorReason::BadCertificate => Self::mark_failure(event.get_application_id()),
                 _ => (),
             }
 
@@ -357,14 +380,14 @@ impl ResponseProducer {
         let routing_key = match apns_result.get_reason() {
             InternalServerError | Shutdown | ServiceUnavailable | ExpiredProviderToken => {
                 event.set_retry_after(retry_after);
-                "retry"
+                Retry::Yes
             }
             _ => match apns_result.get_status() {
                 Timeout | Unknown | Forbidden => {
                     event.set_retry_after(retry_after);
-                    "retry"
+                    Retry::Yes
                 }
-                _ => "no_retry",
+                _ => Retry::No,
             },
         };
 
@@ -395,13 +418,13 @@ impl ResponseProducer {
             .set_full_message(format!("{:?}", event))
             .set_level(GelfLevel::Informational)
             .set_metadata("correlation_id", format!("{}", event.get_correlation_id()))?
-            .set_metadata("device_token", format!("{}", event.get_device_token()))?
-            .set_metadata("app_id", format!("{}", event.get_application_id()))?
-            .set_metadata("campaign_id", format!("{}", event.get_campaign_id()))?
-            .set_metadata(
-                "event_source",
-                String::from(event.get_header().get_source()),
-            )?;
+        .set_metadata("device_token", format!("{}", event.get_device_token()))?
+        .set_metadata("app_id", format!("{}", event.get_application_id()))?
+        .set_metadata("campaign_id", format!("{}", event.get_campaign_id()))?
+        .set_metadata(
+            "event_source",
+            String::from(event.get_header().get_source()),
+        )?;
 
         if let Some(r) = response {
             match r.code {
