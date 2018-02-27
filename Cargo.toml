@@ -5,8 +5,8 @@ authors = ["Julius de Bruijn <julius.debruijn@360dialog.com>"]
 build = "build.rs"
 
 [dependencies]
-fcm = { git = "https://github.com/pimeys/fcm-rust",  branch = "hyper-fix-test" }
-hyper = { git = "https://github.com/hyperium/hyper" }
+fcm = "0.2"
+hyper = "0.11"
 protobuf = "1.0.22"
 chan-signal = "0.1.6"
 argparse = "0.2.1"
@@ -31,6 +31,3 @@ lazy_static = "0.1.*"
 git = "https://github.com/pimeys/rust-amqp"
 branch = "consumer_clean_exit"
 default-features = false
-
-[replace]
-"hyper:0.11.17" = { git = 'https://github.com/hyperium/hyper' }
