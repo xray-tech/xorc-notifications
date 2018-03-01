@@ -1,5 +1,8 @@
 #[macro_use]
 extern crate log;
+#[macro_use]
+extern crate serde_derive;
+
 extern crate env_logger;
 extern crate gelf;
 extern crate hyper;
@@ -12,7 +15,7 @@ extern crate chan_signal;
 extern crate argparse;
 extern crate protobuf;
 extern crate toml;
-extern crate rustc_serialize;
+extern crate serde;
 extern crate time;
 extern crate postgres;
 extern crate r2d2;

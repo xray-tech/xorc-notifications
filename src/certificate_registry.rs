@@ -2,7 +2,7 @@ use std::sync::Arc;
 use config::Config;
 use postgres::error::{Error as PostgresError};
 use r2d2;
-use r2d2_postgres::{SslMode, PostgresConnectionManager};
+use r2d2_postgres::{PostgresConnectionManager, TlsMode};
 use std::time::Duration;
 
 pub struct CertificateRegistry {
@@ -18,19 +18,17 @@ pub enum CertificateError {
 
 impl CertificateRegistry {
     pub fn new(config: Arc<Config>) -> CertificateRegistry {
-        let manager = PostgresConnectionManager::new(config.postgres.uri.as_str(), SslMode::None)
+        let manager = PostgresConnectionManager::new(config.postgres.uri.as_str(), TlsMode::None)
             .expect("Couldn't connect to PostgreSQL");
 
-        let psql_config = r2d2::Config::builder()
-            .pool_size(config.postgres.pool_size)
+        let pool = r2d2::Builder::new()
+            .max_size(config.postgres.pool_size)
             .min_idle(Some(config.postgres.min_idle))
             .idle_timeout(Some(Duration::from_millis(config.postgres.idle_timeout)))
             .max_lifetime(Some(Duration::from_millis(config.postgres.max_lifetime)))
-            .build();
+            .build(manager).expect("Couldn't create a PostgreSQL connection pool");
 
-        CertificateRegistry {
-            pool: r2d2::Pool::new(psql_config, manager).expect("Couldn't create a PostgreSQL connection pool"),
-        }
+        CertificateRegistry { pool }
     }
 
     pub fn fetch<F, T>(&self, application: &str, f: F) -> Result<T, CertificateError>

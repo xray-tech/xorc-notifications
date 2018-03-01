@@ -1,13 +1,13 @@
 use std::sync::Arc;
 use config::Config;
-use log::{LogLevelFilter};
-use gelf::{Logger, UdpBackend, Message, Error};
+use log::LevelFilter;
+use gelf::{Level, Logger, UdpBackend, Message, Error};
 use std::env;
 use env_logger;
 
 pub struct GelfLogger {
     connection: Option<Logger>,
-    filter: LogLevelFilter,
+    filter: LevelFilter,
 }
 
 
@@ -15,13 +15,13 @@ impl GelfLogger {
     pub fn new(config: Arc<Config>) -> Result<GelfLogger, Error> {
         let log_level_filter = match env::var("RUST_LOG") {
             Ok(val) => match val.as_ref() {
-                "info"  => LogLevelFilter::Info,
-                "debug" => LogLevelFilter::Debug,
-                "warn"  => LogLevelFilter::Warn,
-                "error" => LogLevelFilter::Error,
-                _       => LogLevelFilter::Info
+                "info"  => LevelFilter::Info,
+                "debug" => LevelFilter::Debug,
+                "warn"  => LevelFilter::Warn,
+                "error" => LevelFilter::Error,
+                _       => LevelFilter::Info
             },
-            _ => LogLevelFilter::Info
+            _ => LevelFilter::Info
         };
 
         if let Ok(_) = env::var("RUST_GELF") {
@@ -39,11 +39,22 @@ impl GelfLogger {
                 env_logger.set_default_metadata(String::from("environment"), String::from("development"));
             };
 
-            env_logger.install(log_level_filter)?;
+            let filter = match env::var("RUST_LOG") {
+                Ok(val) => match val.as_ref() {
+                    "info" => Level::Informational,
+                    "debug" => Level::Debug,
+                    "warn" => Level::Warning,
+                    "error" => Level::Error,
+                    _ => Level::Informational,
+                },
+                _ => Level::Informational,
+            };
+
+            env_logger.install(filter)?;
 
             Ok(GelfLogger { connection: Some(logger), filter: log_level_filter })
         } else {
-            env_logger::init().unwrap();
+            env_logger::init();
             Ok(GelfLogger { connection: None, filter: log_level_filter })
         }
     }
@@ -51,10 +62,15 @@ impl GelfLogger {
     pub fn log_message(&self, msg: Message) {
         match self.connection {
             Some(ref connection) => {
-                connection.log_message(msg)  
+                connection.log_message(msg)
             },
             None => {
-                let level: LogLevelFilter = msg.level().into();
+                let level = match msg.level() {
+                    Level::Emergency | Level::Alert | Level::Critical | Level::Error => LevelFilter::Error,
+                    Level::Warning => LevelFilter::Warn,
+                    Level::Notice | Level::Informational => LevelFilter::Info,
+                    Level::Debug => LevelFilter::Debug,
+                };
 
                 if self.filter <= level {
                     let metadata = msg.all_metadata().iter().fold(Vec::new(), |mut acc, (k, v)| {
