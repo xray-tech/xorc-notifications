@@ -8,7 +8,10 @@ extern crate postgres_derive;
 extern crate prometheus;
 #[macro_use]
 extern crate chan;
+#[macro_use]
+extern crate serde_derive;
 
+extern crate serde;
 extern crate apns2;
 extern crate argparse;
 extern crate chan_signal;
@@ -22,7 +25,6 @@ extern crate postgres;
 extern crate protobuf;
 extern crate r2d2;
 extern crate r2d2_postgres;
-extern crate rustc_serialize;
 extern crate serde_json;
 extern crate time;
 extern crate tokio_core;
