@@ -47,7 +47,7 @@ impl Notifier {
     }
 
     pub fn notify(&self, event: &PushNotification) -> Timeout<FutureResponse> {
-        self.client.send_with_timeout(self.gen_payload(event), Duration::from_secs(2))
+        self.client.send_with_timeout(self.gen_payload(event), Duration::from_secs(3))
     }
 
     fn gen_payload(&self, event: &PushNotification) -> Payload {
