@@ -93,16 +93,15 @@ impl CertificateRegistry {
             );
         };
 
-        let psql_config = r2d2::Config::builder()
-            .pool_size(config.postgres.pool_size)
+        let pool = r2d2::Builder::new()
+            .max_size(config.postgres.pool_size)
             .min_idle(Some(config.postgres.min_idle))
             .idle_timeout(Some(Duration::from_millis(config.postgres.idle_timeout)))
             .max_lifetime(Some(Duration::from_millis(config.postgres.max_lifetime)))
-            .build();
+            .build(manager).expect("Couldn't create a PostgreSQL connection pool");
 
         CertificateRegistry {
-            pool: r2d2::Pool::new(psql_config, manager)
-                .expect("Couldn't create a PostgreSQL connection pool"),
+            pool: pool,
             all_apps_query: all_apps,
         }
     }
