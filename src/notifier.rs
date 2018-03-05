@@ -3,9 +3,9 @@ use events::push_notification::PushNotification;
 use tokio_core::reactor::Core;
 use futures::sync::mpsc::{Sender, Receiver};
 use futures::{Future, Stream, Sink};
-use rustc_serialize::base64::FromBase64;
 use metrics::RESPONSE_TIMES_HISTOGRAM;
 use std::time::Duration;
+use base64;
 
 pub struct Notifier {}
 
@@ -60,8 +60,8 @@ impl Notifier {
 
     fn build_message(pn: &PushNotification, gcm_api_key: Option<String>) -> Result<WebPushMessage, WebPushError> {
         let web = pn.get_web();
-        let auth = web.get_auth().from_base64().unwrap();
-        let p256dh = web.get_p256dh().from_base64().unwrap();
+        let auth = base64::decode(web.get_auth()).unwrap();
+        let p256dh = base64::decode(web.get_p256dh()).unwrap();
 
         let mut message = WebPushMessageBuilder::new(pn.get_device_token(), &auth, &p256dh)?;
 

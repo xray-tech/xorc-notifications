@@ -12,18 +12,22 @@ extern crate chan_signal;
 extern crate argparse;
 extern crate protobuf;
 extern crate toml;
-extern crate rustc_serialize;
+extern crate serde;
 extern crate time;
 extern crate postgres;
 extern crate r2d2;
 extern crate r2d2_postgres;
 extern crate tokio_signal;
+extern crate base64;
 
 #[macro_use]
 extern crate prometheus;
 
 #[macro_use]
 extern crate lazy_static;
+
+#[macro_use]
+extern crate serde_derive;
 
 mod logger;
 mod config;

@@ -1,9 +1,8 @@
 use std::fs::File;
 use std::io::prelude::*;
-use toml::{Parser, Value};
 use toml;
 
-#[derive(RustcEncodable, RustcDecodable, Debug)]
+#[derive(Deserialize, Debug)]
 pub struct Config {
     pub postgres: PostgresConfig,
     pub rabbitmq: RabbitMqConfig,
@@ -24,26 +23,11 @@ impl Config {
         file.read_to_string(&mut config_toml)
             .unwrap_or_else(|err| panic!("Error while reading config: [{}]", err));
 
-        let mut parser = Parser::new(&config_toml);
-        let toml = parser.parse();
-
-        if toml.is_none() {
-            for err in &parser.errors {
-                let (loline, locol) = parser.to_linecol(err.lo);
-                let (hiline, hicol) = parser.to_linecol(err.hi);
-                println!("{}:{}:{}-{}:{} error: {}",
-                         path, loline, locol, hiline, hicol, err.desc);
-            }
-            panic!("Exiting server");
-        }
-
-        let config = Value::Table(toml.unwrap());
-
-        toml::decode(config).unwrap()
+        toml::from_str(&config_toml).unwrap()
     }
 }
 
-#[derive(RustcEncodable, RustcDecodable, Debug)]
+#[derive(Deserialize, Debug)]
 pub struct RabbitMqConfig {
     pub queue: String,
     pub exchange: String,
@@ -58,7 +42,7 @@ pub struct RabbitMqConfig {
     pub response_exchange_type: String,
 }
 
-#[derive(RustcEncodable, RustcDecodable, Debug)]
+#[derive(Deserialize, Debug)]
 pub struct PostgresConfig {
     pub uri: String,
     pub pool_size: u32,
@@ -67,7 +51,7 @@ pub struct PostgresConfig {
     pub max_lifetime: u64,
 }
 
-#[derive(RustcEncodable, RustcDecodable, Debug)]
+#[derive(Deserialize, Debug)]
 pub struct LogConfig {
     pub host: String,
 }
