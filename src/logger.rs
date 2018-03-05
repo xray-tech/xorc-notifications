@@ -32,8 +32,8 @@ impl GelfLogger {
             let mut logger = Logger::new(Box::new(UdpBackend::new(&config.log.host)?))?;
             let mut env_logger = Logger::new(Box::new(UdpBackend::new(&config.log.host)?))?;
 
-            logger.set_default_metadata(String::from("application_name"), String::from("apns2"));
-            env_logger.set_default_metadata(String::from("application_name"), String::from("apns2"));
+            logger.set_default_metadata(String::from("application_name"), String::from("web-push"));
+            env_logger.set_default_metadata(String::from("application_name"), String::from("web-push"));
 
             if let Ok(environment) = env::var("RUST_ENV") {
                 logger.set_default_metadata(
