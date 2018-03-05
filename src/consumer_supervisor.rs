@@ -69,7 +69,7 @@ impl ConsumerSupervisor {
             config: config,
             control: control,
             certificate_registry: registry,
-            wait_duration: Duration::from_secs(60),
+            wait_duration: Duration::from_secs(5),
             consumers: HashMap::new(),
             logger: logger,
             producer_tx: producer_tx,
