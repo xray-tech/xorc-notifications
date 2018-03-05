@@ -26,7 +26,7 @@ use std::io;
 use std::str::FromStr;
 use time;
 use metrics::*;
-use consumer_supervisor::CONSUMER_FAILURES;
+use consumer_supervisor::{CONSUMER_FAILURES, MAX_FAILURES};
 use chan;
 
 pub type ApnsData = (PushNotification, Result<Response, Error>);
@@ -82,7 +82,7 @@ impl ResponseProducer {
                             .run(heartbeat_future_fn(&heartbeat_client))
                         {
                             Ok(s) => {
-                                info!("Producer heartbeat thread exited cleanly ({:?})", s)  
+                                info!("Producer heartbeat thread exited cleanly ({:?})", s);
                             },
                             Err(e) => {
                                 error!("Producer heartbeat thread crashed, going down... ({:?})", e);
@@ -151,7 +151,7 @@ impl ResponseProducer {
                                             Some(Error::TimeoutError),
                                         );
 
-                                        Self::mark_failure(event.get_application_id());
+                                        Self::mark_failure(event.get_application_id(), 1);
 
                                         Self::handle_fatal(
                                             &channel,
@@ -169,7 +169,7 @@ impl ResponseProducer {
                                             Some(Error::ConnectionError),
                                         );
 
-                                        Self::mark_failure(event.get_application_id());
+                                        Self::mark_failure(event.get_application_id(), MAX_FAILURES);
 
                                         Self::handle_fatal(
                                             &channel,
@@ -181,7 +181,7 @@ impl ResponseProducer {
                                     (event, Err(e)) => {
                                         error!("Fatal error when sending a push notification, restarting consumer: {:?}", e);
 
-                                        Self::mark_failure(event.get_application_id());
+                                        Self::mark_failure(event.get_application_id(), MAX_FAILURES);
 
                                         Self::handle_fatal(
                                             &channel,
@@ -352,7 +352,7 @@ impl ResponseProducer {
             match error.reason {
                 ErrorReason::ExpiredProviderToken
                     | ErrorReason::IdleTimeout
-                    | ErrorReason::BadCertificate => Self::mark_failure(event.get_application_id()),
+                    | ErrorReason::BadCertificate => Self::mark_failure(event.get_application_id(), MAX_FAILURES),
                 _ => (),
             }
 
@@ -399,12 +399,12 @@ impl ResponseProducer {
         Self::publish(channel, event, exchange, routing_key)
     }
 
-    fn mark_failure(app_id: &str) {
+    fn mark_failure(app_id: &str, error_level: i32) {
         match i32::from_str(app_id) {
             Ok(id) => {
                 let mut failures = CONSUMER_FAILURES.lock().unwrap();
                 let counter = failures.entry(id).or_insert(0);
-                *counter += 1;
+                *counter += error_level;
             }
             _ => (),
         }
