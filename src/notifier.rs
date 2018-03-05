@@ -60,8 +60,8 @@ impl Notifier {
 
     fn build_message(pn: &PushNotification, gcm_api_key: Option<String>) -> Result<WebPushMessage, WebPushError> {
         let web = pn.get_web();
-        let auth = base64::decode(web.get_auth()).unwrap();
-        let p256dh = base64::decode(web.get_p256dh()).unwrap();
+        let auth = base64::decode_config(web.get_auth(), base64::URL_SAFE).unwrap();
+        let p256dh = base64::decode_config(web.get_p256dh(), base64::URL_SAFE).unwrap();
 
         let mut message = WebPushMessageBuilder::new(pn.get_device_token(), &auth, &p256dh)?;
 
