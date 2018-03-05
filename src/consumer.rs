@@ -205,7 +205,7 @@ impl Consumer {
                         &consumer_tag,
                         &BasicConsumeOptions {
                             no_local: true,
-                            no_ack: false,
+                            no_ack: true,
                             exclusive: false,
                             no_wait: false,
                             ..Default::default()
@@ -230,8 +230,6 @@ impl Consumer {
                         self.logger.log_message(log_msg);
 
                         stream.for_each(move |message| {
-                            channel.basic_ack(message.delivery_tag);
-
                             if let Ok(event) = parse_from_bytes::<PushNotification>(&message.data) {
                                 let tx = tx_producer.clone();
 
