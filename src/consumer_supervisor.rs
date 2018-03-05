@@ -17,7 +17,7 @@ use futures::Future;
 use futures::sync::mpsc;
 use producer::ApnsData;
 
-pub static MAX_FAILURES: i32 = 15;
+pub static MAX_FAILURES: i32 = 2;
 
 lazy_static! {
     pub static ref CONSUMER_FAILURES: Mutex<HashMap<i32, i32>> = Mutex::new(HashMap::new());
