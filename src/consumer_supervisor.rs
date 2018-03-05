@@ -6,7 +6,7 @@ use std::time::Duration;
 use std::thread::JoinHandle;
 use time::Timespec;
 use apns2::error;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::thread;
 use certificate_registry::{ApnsConnectionParameters, Application, CertificateError};
 use consumer::Consumer;
@@ -17,8 +17,10 @@ use futures::Future;
 use futures::sync::mpsc;
 use producer::ApnsData;
 
+pub static MAX_FAILURES: i32 = 15;
+
 lazy_static! {
-    pub static ref CONSUMER_FAILURES: Mutex<HashSet<i32>> = Mutex::new(HashSet::new());
+    pub static ref CONSUMER_FAILURES: Mutex<HashMap<i32, i32>> = Mutex::new(HashMap::new());
 }
 
 pub struct ConsumerSupervisor {
@@ -67,7 +69,7 @@ impl ConsumerSupervisor {
             config: config,
             control: control,
             certificate_registry: registry,
-            wait_duration: Duration::from_secs(5),
+            wait_duration: Duration::from_secs(60),
             consumers: HashMap::new(),
             logger: logger,
             producer_tx: producer_tx,
@@ -106,7 +108,7 @@ impl ConsumerSupervisor {
                         }
                         Err(e) => {
                             let mut failures = CONSUMER_FAILURES.lock().unwrap();
-                            failures.insert(app.id);
+                            failures.insert(app.id, MAX_FAILURES);
 
                             let mut log_msg =
                                 GelfMessage::new(format!("Error in creating a consumer"));
@@ -131,21 +133,25 @@ impl ConsumerSupervisor {
     fn remove_failed(&mut self) {
         let mut failures = CONSUMER_FAILURES.lock().unwrap();
 
-        for app_id in failures.drain() {
-            let mut log_msg =
-                GelfMessage::new(String::from("Supervisor consumer failure and restart"));
-            let _ = log_msg.set_metadata("app_id", format!("{}", app_id));
-            let _ = log_msg.set_metadata("action", format!("{:?}", LogAction::ConsumerRestart));
+        for (app_id, failures) in failures.iter_mut() {
+            if *failures >= MAX_FAILURES {
+                let mut log_msg =
+                    GelfMessage::new(String::from("Supervisor consumer failure and restart"));
+                let _ = log_msg.set_metadata("app_id", format!("{}", app_id));
+                let _ = log_msg.set_metadata("action", format!("{:?}", LogAction::ConsumerRestart));
 
-            log_msg.set_full_message(String::from(
-                "Consumer connection to APNS is unstable and the consumer is restarted.",
-            ));
-            log_msg.set_level(GelfLevel::Informational);
-            self.logger.log_message(log_msg);
+                log_msg.set_full_message(String::from(
+                    "Consumer connection to APNS is unstable and the consumer is restarted.",
+                ));
+                log_msg.set_level(GelfLevel::Informational);
+                self.logger.log_message(log_msg);
 
-            if let Some(consumer) = self.consumers.remove(&app_id) {
-                consumer.control.send(()).unwrap();
+                if let Some(consumer) = self.consumers.remove(&app_id) {
+                    consumer.control.send(()).unwrap();
+                }
             }
+
+            *failures = 0;
         }
     }
 

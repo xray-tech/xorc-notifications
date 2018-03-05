@@ -151,7 +151,7 @@ impl ResponseProducer {
                                             Some(Error::TimeoutError),
                                         );
 
-                                        //Self::mark_failure(event.get_application_id());
+                                        Self::mark_failure(event.get_application_id());
 
                                         Self::handle_fatal(
                                             &channel,
@@ -169,7 +169,7 @@ impl ResponseProducer {
                                             Some(Error::ConnectionError),
                                         );
 
-                                        //Self::mark_failure(event.get_application_id());
+                                        Self::mark_failure(event.get_application_id());
 
                                         Self::handle_fatal(
                                             &channel,
@@ -403,7 +403,8 @@ impl ResponseProducer {
         match i32::from_str(app_id) {
             Ok(id) => {
                 let mut failures = CONSUMER_FAILURES.lock().unwrap();
-                failures.insert(id);
+                let counter = failures.entry(id).or_insert(0);
+                *counter += 1;
             }
             _ => (),
         }

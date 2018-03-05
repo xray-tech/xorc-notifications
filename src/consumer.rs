@@ -21,7 +21,7 @@ use metrics::*;
 use certificate_registry::ApnsConnectionParameters;
 use futures::sync::oneshot;
 use producer::ApnsData;
-use consumer_supervisor::CONSUMER_FAILURES;
+use consumer_supervisor::{CONSUMER_FAILURES, MAX_FAILURES};
 
 pub struct Consumer {
     config: Arc<Config>,
@@ -126,7 +126,7 @@ impl Consumer {
                             Err(e) => {
                                 error!("Consumer #{} heartbeat core crashed, restarting... ({:?})", app_id, e);
                                 let mut failures = CONSUMER_FAILURES.lock().unwrap();
-                                failures.insert(app_id);
+                                failures.insert(app_id, MAX_FAILURES);
                             }
                         }
                     })
