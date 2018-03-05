@@ -17,7 +17,7 @@ use futures::Future;
 use futures::sync::mpsc;
 use producer::ApnsData;
 
-pub static MAX_FAILURES: i32 = 2;
+pub static MAX_FAILURES: i32 = 10;
 
 lazy_static! {
     pub static ref CONSUMER_FAILURES: Mutex<HashMap<i32, i32>> = Mutex::new(HashMap::new());
@@ -149,9 +149,9 @@ impl ConsumerSupervisor {
                 if let Some(consumer) = self.consumers.remove(&app_id) {
                     consumer.control.send(()).unwrap();
                 }
-            }
 
-            *failures = 0;
+                *failures = 0;
+            }
         }
     }
 
