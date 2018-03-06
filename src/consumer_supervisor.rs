@@ -42,11 +42,7 @@ struct ApplicationConsumer {
 impl Drop for ConsumerSupervisor {
     fn drop(&mut self) {
         for (_, mut consumer) in self.consumers.drain() {
-            consumer.control.send(()).unwrap();
-            if let Some(handle) = consumer.handle.take() {
-                handle.thread().unpark();
-                handle.join().unwrap();
-            }
+            Self::kill_consumer(consumer);
         }
     }
 }
@@ -147,7 +143,8 @@ impl ConsumerSupervisor {
                 self.logger.log_message(log_msg);
 
                 if let Some(consumer) = self.consumers.remove(&app_id) {
-                    consumer.control.send(()).unwrap();
+                    println!("WE ARE DYING");
+                    Self::kill_consumer(consumer);
                 }
 
                 *failures = 0;
@@ -187,6 +184,15 @@ impl ConsumerSupervisor {
                 }
                 _ => (),
             }
+        }
+    }
+
+    fn kill_consumer(mut consumer: ApplicationConsumer) {
+        consumer.control.send(()).unwrap();
+
+        if let Some(handle) = consumer.handle.take() {
+            handle.thread().unpark();
+            handle.join().unwrap();
         }
     }
 

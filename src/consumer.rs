@@ -136,10 +136,22 @@ impl Consumer {
             });
 
         let env_declaring = move |channel: Channel<TcpStream>| {
-            channel
-                .exchange_declare(
-                    &self.config.rabbitmq.exchange,
-                    &self.config.rabbitmq.exchange_type,
+            channel.exchange_declare(
+                &self.config.rabbitmq.exchange,
+                &self.config.rabbitmq.exchange_type,
+                &ExchangeDeclareOptions {
+                    passive: false,
+                    durable: true,
+                    auto_delete: false,
+                    internal: false,
+                    nowait: false,
+                    ..Default::default()
+                },
+                &FieldTable::new(),
+            ).and_then(move |_| {
+                channel.exchange_declare(
+                    &self.config.rabbitmq.response_exchange,
+                    &self.config.rabbitmq.response_exchange_type,
                     &ExchangeDeclareOptions {
                         passive: false,
                         durable: true,
@@ -149,69 +161,48 @@ impl Consumer {
                         ..Default::default()
                     },
                     &FieldTable::new(),
-                )
-                .and_then(move |_| {
-                    channel
-                        .exchange_declare(
-                            &self.config.rabbitmq.response_exchange,
-                            &self.config.rabbitmq.response_exchange_type,
-                            &ExchangeDeclareOptions {
-                                passive: false,
-                                durable: true,
-                                auto_delete: false,
-                                internal: false,
+                ).and_then(move |_| {
+                    channel.queue_declare(
+                        &queue_name,
+                        &QueueDeclareOptions {
+                            passive: false,
+                            durable: true,
+                            exclusive: false,
+                            auto_delete: false,
+                            nowait: false,
+                            ..Default::default()
+                        },
+                        &FieldTable::new(),
+                    ).and_then(move |_| {
+                        channel.queue_bind(
+                            &queue_name,
+                            &self.config.rabbitmq.exchange,
+                            &routing_key,
+                            &QueueBindOptions {
                                 nowait: false,
                                 ..Default::default()
                             },
                             &FieldTable::new(),
                         )
-                        .and_then(move |_| {
-                            channel
-                                .queue_declare(
-                                    &queue_name,
-                                    &QueueDeclareOptions {
-                                        passive: false,
-                                        durable: true,
-                                        exclusive: false,
-                                        auto_delete: false,
-                                        nowait: false,
-                                        ..Default::default()
-                                    },
-                                    &FieldTable::new(),
-                                )
-                                .and_then(move |_| {
-                                    channel.queue_bind(
-                                        &queue_name,
-                                        &self.config.rabbitmq.exchange,
-                                        &routing_key,
-                                        &QueueBindOptions {
-                                            nowait: false,
-                                            ..Default::default()
-                                        },
-                                        &FieldTable::new(),
-                                    )
-                                })
-                        })
+                    })
                 })
+            })
         };
 
         let consuming = connecting.and_then(move |channel| {
-            let consumer_tag = format!("apns_consumer_{}", &self.application.id);
+            let consumer_tag = format!("julius_consumer_{}", &self.application.id);
+            let queue = format!("{}_{}", &self.config.rabbitmq.queue, &self.application.id);
 
             env_declaring(channel.clone()).and_then(move |_| {
                 channel
-                    .basic_consume(
-                        &format!("{}_{}", &self.config.rabbitmq.queue, &self.application.id),
-                        &consumer_tag,
+                    .basic_consume(&queue, &consumer_tag,
                         &BasicConsumeOptions {
                             no_local: true,
                             no_ack: true,
                             exclusive: false,
                             no_wait: false,
                             ..Default::default()
-                        },
-                        &FieldTable::new(),
-                    )
+                        }, &FieldTable::new())
                     .and_then(move |stream| {
                         let mut log_msg = GelfMessage::new(String::from("Consumer started"));
 
@@ -220,26 +211,21 @@ impl Consumer {
                         ));
                         log_msg.set_level(GelfLevel::Informational);
 
-                        let _ = log_msg
-                            .set_metadata("action", format!("{:?}", LogAction::ConsumerStart));
+                        let _ = log_msg.set_metadata("action", format!("{:?}", LogAction::ConsumerStart));
                         let _ = log_msg.set_metadata("app_id", format!("{}", &self.application.id));
                         let _ = log_msg.set_metadata("consumer_name", format!("{}", &consumer_tag));
-                        let _ = log_msg
-                            .set_metadata("queue", format!("{}", &self.config.rabbitmq.queue));
+                        let _ = log_msg.set_metadata("queue", format!("{}", &queue));
 
                         self.logger.log_message(log_msg);
 
-                        stream.for_each(move |message| {
+                        let work_loop = stream.for_each(move |message| {
                             if let Ok(event) = parse_from_bytes::<PushNotification>(&message.data) {
                                 let tx = tx_producer.clone();
 
-                                REQUEST_COUNTER
-                                    .with_label_values(&[
-                                        "requested",
-                                        event.get_application_id(),
-                                        event.get_campaign_id(),
-                                    ])
-                                    .inc();
+                                REQUEST_COUNTER.with_label_values(&[
+                                    "requested", event.get_application_id(), event.get_campaign_id()
+                                ]).inc();
+
                                 CALLBACKS_INFLIGHT.inc();
                                 let timer = RESPONSE_TIMES_HISTOGRAM.start_timer();
 
@@ -258,12 +244,17 @@ impl Consumer {
                             }
 
                             Ok(())
+                        });
+
+                        work_loop.select2(control).then(move |_| {
+                            channel.close(200, "Bye");
+                            Ok(())
                         })
                     })
             })
         });
 
-        let _ = core.run(consuming.select(control.then(|_| Ok(()))));
+        let _ = core.run(consuming);
         Ok(())
     }
 }
