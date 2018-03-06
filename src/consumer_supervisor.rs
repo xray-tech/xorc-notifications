@@ -143,7 +143,6 @@ impl ConsumerSupervisor {
                 self.logger.log_message(log_msg);
 
                 if let Some(consumer) = self.consumers.remove(&app_id) {
-                    println!("WE ARE DYING");
                     Self::kill_consumer(consumer);
                 }
 
@@ -167,19 +166,23 @@ impl ConsumerSupervisor {
             }
         }
 
-        self.consumers.retain(|ref id, _| {
-            if updates.contains_key(id) {
-                true
-            } else {
-                false
-            }
-        });
+        let dead: Vec<i32> = self.consumers.keys().filter(|k| !updates.contains_key(k)).map(|i| *i).collect();
+
+        for id in dead.iter() {
+            if let Some(consumer) = self.consumers.remove(&id) {
+                Self::kill_consumer(consumer);
+            };
+        }
     }
 
     fn update_existing(&mut self, updates: HashMap<i32, ConsumerAction>) {
         for (id, update) in updates {
             match update {
                 ConsumerAction::Update(consumer) => {
+                    if let Some(consumer) = self.consumers.remove(&id) {
+                        Self::kill_consumer(consumer);
+                    };
+
                     self.consumers.insert(id, consumer);
                 }
                 _ => (),
