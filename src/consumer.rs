@@ -190,7 +190,7 @@ impl Consumer {
         };
 
         let consuming = connecting.and_then(move |channel| {
-            let consumer_tag = format!("julius_consumer_{}", &self.application.id);
+            let consumer_tag = format!("apns_consumer_{}", &self.application.id);
             let queue = format!("{}_{}", &self.config.rabbitmq.queue, &self.application.id);
 
             env_declaring(channel.clone()).and_then(move |_| {
