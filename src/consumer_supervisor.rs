@@ -34,6 +34,7 @@ pub struct ConsumerSupervisor {
 }
 
 struct ApplicationConsumer {
+    application_id: i32,
     handle: Option<JoinHandle<()>>,
     updated_at: Option<Timespec>,
     control: oneshot::Sender<()>,
@@ -191,11 +192,18 @@ impl ConsumerSupervisor {
     }
 
     fn kill_consumer(mut consumer: ApplicationConsumer) {
-        consumer.control.send(()).unwrap();
+        if let Err(e) = consumer.control.send(()) {
+            error!("Couldn't send a consumer stop for consumer #{}: {:?}",
+                   consumer.application_id, e);
+        };
 
         if let Some(handle) = consumer.handle.take() {
             handle.thread().unpark();
-            handle.join().unwrap();
+
+            if let Err(e) = handle.join() {
+                error!("Couldn't join a consumer thread for consumer #{}: {:?}",
+                       consumer.application_id, e);
+            };
         }
     }
 
@@ -252,6 +260,7 @@ impl ConsumerSupervisor {
         self.logger.log_message(log_msg);
 
         Ok(ApplicationConsumer {
+            application_id: app.id,
             handle: Some(handle),
             updated_at: app.updated_at,
             control: control_tx,

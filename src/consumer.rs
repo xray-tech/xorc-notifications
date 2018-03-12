@@ -122,7 +122,9 @@ impl Consumer {
                             .run(heartbeat_future_fn(&heartbeat_client));
 
                         match heartbeat_core {
-                            Ok(_) => info!("Consumer #{} hearbeat core exited successfully", app_id),
+                            Ok(_) => {
+                                info!("Consumer #{} hearbeat core exited successfully", app_id);
+                            },
                             Err(e) => {
                                 error!("Consumer #{} heartbeat core crashed, restarting... ({:?})", app_id, e);
                                 let mut failures = CONSUMER_FAILURES.lock().unwrap();
