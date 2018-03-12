@@ -251,8 +251,14 @@ impl ConsumerSupervisor {
                 let consumer = Consumer::new(config, app, logger);
 
                 match consumer.consume(control, producer_tx) {
-                    Ok(_) => info!("Consumer #{} exited normally", app_id),
-                    Err(e) => error!("Couldn't start consumer #{}: {:?}", app_id, e),
+                    Ok(_) => {
+                        info!("Consumer #{} exited normally", app_id);
+                    },
+                    Err(e) => {
+                        error!("Couldn't start consumer #{}: {:?}", app_id, e);
+                        let mut failures = CONSUMER_FAILURES.lock().unwrap();
+                        failures.insert(app_id, MAX_FAILURES);
+                    },
                 }
             })
         };
