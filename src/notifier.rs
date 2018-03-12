@@ -24,23 +24,10 @@ impl Notifier {
         topic: String,
     ) -> Result<Notifier, Error> {
         let client = match connection_parameters {
-            ApnsConnectionParameters::Certificate {
-                pkcs12,
-                password,
-                endpoint,
-            } => Client::certificate(&mut Cursor::new(&pkcs12), &password, handle, endpoint)?,
-            ApnsConnectionParameters::Token {
-                pkcs8,
-                key_id,
-                team_id,
-                endpoint,
-            } => Client::token(
-                &mut Cursor::new(&pkcs8),
-                key_id.as_ref(),
-                team_id.as_ref(),
-                handle,
-                endpoint,
-            )?,
+            ApnsConnectionParameters::Certificate {pkcs12, password, endpoint} =>
+                Client::certificate(&mut Cursor::new(&pkcs12), &password, handle, endpoint)?,
+            ApnsConnectionParameters::Token {pkcs8, key_id, team_id, endpoint} =>
+                Client::token(&mut Cursor::new(&pkcs8), key_id.as_ref(), team_id.as_ref(), handle, endpoint)?,
         };
 
         Ok(Notifier { client, topic })
