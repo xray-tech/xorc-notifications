@@ -110,6 +110,7 @@ impl Consumer {
             ..Default::default()
         };
 
+        let hb_control = control.clone();
         let connecting = TcpStream::connect(&address, &handle)
             .and_then(move |stream| Client::connect(stream, &connection_options))
             .and_then(|(client, heartbeat_future_fn)| {
@@ -119,14 +120,14 @@ impl Consumer {
                     .spawn(move || {
                         let heartbeat_core = Core::new()
                             .unwrap()
-                            .run(heartbeat_future_fn(&heartbeat_client));
+                            .run(heartbeat_future_fn(&heartbeat_client).select2(hb_control));
 
                         match heartbeat_core {
                             Ok(_) => {
                                 info!("Consumer #{} hearbeat core exited successfully", app_id);
                             },
-                            Err(e) => {
-                                error!("Consumer #{} heartbeat core crashed, restarting... ({:?})", app_id, e);
+                            Err(_) => {
+                                error!("Consumer #{} heartbeat core crashed, restarting...", app_id);
                                 let mut failures = CONSUMER_FAILURES.lock().unwrap();
                                 failures.insert(app_id, MAX_FAILURES);
                             }
