@@ -214,6 +214,7 @@ impl ResponseProducer {
                         DeviceTokenNotForTopic | BadDeviceToken => {
                             result_event.set_delete_user(true);
                             result_event.set_successful(false);
+                            result_event.set_reason(format!("{:?}", response.get_reason()));
                             result_event.set_error(NotificationResult_Error::Unsubscribed);
                         },
                         _ => {
