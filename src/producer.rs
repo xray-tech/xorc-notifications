@@ -95,109 +95,77 @@ impl ResponseProducer {
                 client.create_channel()
             })
             .and_then(|channel| {
-                channel
-                    .exchange_declare(
-                        &self.config.rabbitmq.response_exchange,
-                        &self.config.rabbitmq.response_exchange_type,
-                        &ExchangeDeclareOptions {
-                            passive: false,
-                            durable: true,
-                            auto_delete: false,
-                            internal: false,
-                            nowait: false,
-                            ..Default::default()
-                        },
-                        &FieldTable::new(),
-                    )
-                    .and_then(move |_| {
-                        rx_consumers
-                            .for_each(move |item| {
-                                let work = match item {
-                                    (event, Ok(response)) => {
-                                        let _ = Self::log_result(
-                                            "Successfully sent a push notification",
-                                            &self.logger,
-                                            &event,
-                                            Some(&response),
-                                            None,
-                                        );
-                                        Self::handle_response(
-                                            &channel,
-                                            &self.config.rabbitmq.response_exchange,
-                                            event,
-                                        )
-                                    }
-                                    (event, Err(Error::ResponseError(response))) => {
-                                        let _ = Self::log_result(
-                                            "Error sending a push notification",
-                                            &self.logger,
-                                            &event,
-                                            Some(&response),
-                                            None,
-                                        );
-                                        Self::handle_error(
-                                            &channel,
-                                            &self.config.rabbitmq.response_exchange,
-                                            event,
-                                            response,
-                                        )
-                                    }
-                                    (event, Err(Error::TimeoutError)) => {
-                                        let _ = Self::log_result(
-                                            "Timeout when sending a push notification",
-                                            &self.logger,
-                                            &event,
-                                            None,
-                                            Some(Error::TimeoutError),
-                                        );
+                channel.exchange_declare(
+                    &self.config.rabbitmq.response_exchange,
+                    &self.config.rabbitmq.response_exchange_type,
+                    &ExchangeDeclareOptions {
+                        passive: false,
+                        durable: true,
+                        auto_delete: false,
+                        internal: false,
+                        nowait: false,
+                        ..Default::default()
+                    },
+                    &FieldTable::new(),
+                ).and_then(move |_| {
+                    rx_consumers.for_each(move |item| {
+                        let work = match item {
+                            (event, Ok(response)) => {
+                                let _ = Self::log_result(
+                                    "Successfully sent a push notification",
+                                    &self.logger, &event, Some(&response), None);
 
-                                        Self::mark_failure(event.get_application_id(), 1);
+                                Self::handle_response(
+                                    &channel, &self.config.rabbitmq.response_exchange,
+                                    event)
+                            }
+                            (event, Err(Error::ResponseError(response))) => {
+                                let _ = Self::log_result(
+                                    "Error sending a push notification",
+                                    &self.logger, &event, Some(&response), None);
 
-                                        Self::handle_fatal(
-                                            &channel,
-                                            &self.config.rabbitmq.response_exchange,
-                                            ApnsResult_Status::Timeout,
-                                            event,
-                                        )
-                                    }
-                                    (event, Err(Error::ConnectionError)) => {
-                                        let _ = Self::log_result(
-                                            "Connection error",
-                                            &self.logger,
-                                            &event,
-                                            None,
-                                            Some(Error::ConnectionError),
-                                        );
+                                Self::handle_error(
+                                    &channel, &self.config.rabbitmq.response_exchange,
+                                    event, response)
+                            }
+                            (event, Err(Error::TimeoutError)) => {
+                                let _ = Self::log_result(
+                                    "Timeout when sending a push notification",
+                                    &self.logger, &event, None, Some(Error::TimeoutError));
 
-                                        Self::mark_failure(event.get_application_id(), MAX_FAILURES);
+                                Self::mark_failure(event.get_application_id(), 1);
 
-                                        Self::handle_fatal(
-                                            &channel,
-                                            &self.config.rabbitmq.response_exchange,
-                                            ApnsResult_Status::MissingChannel,
-                                            event,
-                                        )
-                                    }
-                                    (event, Err(e)) => {
-                                        error!("Fatal error when sending a push notification, restarting consumer: {:?}", e);
+                                Self::handle_fatal(
+                                    &channel, &self.config.rabbitmq.response_exchange,
+                                    ApnsResult_Status::Timeout, event)
+                            }
+                            (event, Err(Error::ConnectionError)) => {
+                                let _ = Self::log_result(
+                                    "Connection error",
+                                    &self.logger, &event, None, Some(Error::ConnectionError));
 
-                                        Self::mark_failure(event.get_application_id(), MAX_FAILURES);
+                                Self::mark_failure(event.get_application_id(), MAX_FAILURES);
 
-                                        Self::handle_fatal(
-                                            &channel,
-                                            &self.config.rabbitmq.response_exchange,
-                                            ApnsResult_Status::Unknown,
-                                            event,
-                                        )
-                                    }
-                                }.then(|_| ok(()));
+                                Self::handle_fatal(
+                                    &channel, &self.config.rabbitmq.response_exchange,
+                                    ApnsResult_Status::MissingChannel, event)
+                            }
+                            (event, Err(e)) => {
+                                error!("Fatal error when sending a push notification, restarting consumer: {:?}", e);
 
-                                handle.spawn(work);
+                                Self::mark_failure(event.get_application_id(), MAX_FAILURES);
 
-                                Ok(())
-                            })
-                            .then(|_| ok(()))
-                    })
+                                Self::handle_fatal(
+                                    &channel, &self.config.rabbitmq.response_exchange,
+                                    ApnsResult_Status::Unknown, event)
+                            }
+                        }.then(|_| ok(()));
+
+                        handle.spawn(work);
+
+                        Ok(())
+                    }).then(|_| ok(()))
+                })
             });
 
         core.run(work).unwrap();
@@ -213,49 +181,42 @@ impl ResponseProducer {
         exchange: &str,
         routing_key: Retry,
     ) -> Box<Future<Item = Option<bool>, Error = io::Error>> {
-        match routing_key {
-            Retry::Yes => {
-                channel.basic_publish(
-                    exchange,
-                    "retry",
-                    &event.write_to_bytes().unwrap(),
-                    &BasicPublishOptions {
-                        mandatory: false,
-                        immediate: false,
-                        ..Default::default()
-                    },
-                    BasicProperties::default(),
-                )
-            },
-            Retry::No => {
-                if Self::can_reply(&event, routing_key) {
-                    let response_routing_key = event.get_response_recipient_id();
-                    let response = event.get_apple().get_result();
-                    let current_time = time::get_time();
-                    let mut header = Header::new();
+        if Self::can_reply(&event, routing_key) {
+            let response_routing_key = event.get_response_recipient_id();
+            let response = event.get_apple().get_result();
+            let current_time = time::get_time();
+            let mut header = Header::new();
 
-                    header.set_created_at(
-                        (current_time.sec as i64 * 1000) + (current_time.nsec as i64 / 1000 / 1000),
-                    );
-                    header.set_source(String::from("apns"));
-                    header.set_recipient_id(String::from(response_routing_key));
-                    header.set_field_type(String::from("notification.NotificationResult"));
+            header.set_created_at(
+                (current_time.sec as i64 * 1000) + (current_time.nsec as i64 / 1000 / 1000),
+            );
+            header.set_source(String::from("apns"));
+            header.set_recipient_id(String::from(response_routing_key));
+            header.set_field_type(String::from("notification.NotificationResult"));
 
-                    let mut result_event = NotificationResult::new();
-                    result_event.set_header(header);
-                    result_event.set_universe(String::from(event.get_universe()));
-                    result_event.set_correlation_id(String::from(event.get_correlation_id()));
+            let mut result_event = NotificationResult::new();
+            result_event.set_header(header);
+            result_event.set_universe(String::from(event.get_universe()));
+            result_event.set_correlation_id(String::from(event.get_correlation_id()));
 
-                    match response.get_status() {
-                        Success => {
-                            result_event.set_delete_user(false);
-                            result_event.set_successful(true);
-                        }
-                        Unregistered => {
+            match response.get_status() {
+                Success => {
+                    result_event.set_delete_user(false);
+                    result_event.set_successful(true);
+                }
+                Unregistered => {
+                    result_event.set_delete_user(true);
+                    result_event.set_successful(false);
+                    result_event.set_error(NotificationResult_Error::Unsubscribed);
+                }
+                _ => {
+                    match response.get_reason() {
+                        DeviceTokenNotForTopic | BadDeviceToken => {
                             result_event.set_delete_user(true);
                             result_event.set_successful(false);
+                            result_event.set_reason(format!("{:?}", response.get_reason()));
                             result_event.set_error(NotificationResult_Error::Unsubscribed);
-                        }
+                        },
                         _ => {
                             result_event.set_delete_user(false);
                             result_event.set_successful(false);
@@ -263,32 +224,32 @@ impl ResponseProducer {
                             result_event.set_error(NotificationResult_Error::Other);
                         }
                     }
-
-                    channel.basic_publish(
-                        event.get_exchange(),
-                        response_routing_key,
-                        &result_event.write_to_bytes().unwrap(),
-                        &BasicPublishOptions {
-                            mandatory: false,
-                            immediate: false,
-                            ..Default::default()
-                        },
-                        BasicProperties::default(),
-                    )
-                } else {
-                    channel.basic_publish(
-                        exchange,
-                        "no_retry",
-                        &event.write_to_bytes().unwrap(),
-                        &BasicPublishOptions {
-                            mandatory: false,
-                            immediate: false,
-                            ..Default::default()
-                        },
-                        BasicProperties::default(),
-                    )
                 }
             }
+
+            channel.basic_publish(
+                event.get_exchange(),
+                response_routing_key,
+                &result_event.write_to_bytes().unwrap(),
+                &BasicPublishOptions {
+                    mandatory: false,
+                    immediate: false,
+                    ..Default::default()
+                },
+                BasicProperties::default(),
+            )
+        } else {
+            channel.basic_publish(
+                exchange,
+                "no_retry",
+                &event.write_to_bytes().unwrap(),
+                &BasicPublishOptions {
+                    mandatory: false,
+                    immediate: false,
+                    ..Default::default()
+                },
+                BasicProperties::default(),
+            )
         }
     }
 
