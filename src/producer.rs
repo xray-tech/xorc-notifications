@@ -42,6 +42,15 @@ enum Retry {
     No,
 }
 
+impl Into<&'static str> for Retry {
+    fn into(self) -> &'static str {
+        match self {
+            Retry::Yes => "retry",
+            _ => "no_retry"
+        }
+    }
+}
+
 impl ResponseProducer {
     pub fn new(config: Arc<Config>, logger: Arc<GelfLogger>) -> ResponseProducer {
         ResponseProducer {
@@ -171,8 +180,8 @@ impl ResponseProducer {
         core.run(work).unwrap();
     }
 
-    fn can_reply(event: &PushNotification, routing_key: Retry) -> bool {
-        event.has_exchange() && routing_key == Retry::No && event.has_response_recipient_id()
+    fn can_reply(event: &PushNotification, routing_key: &Retry) -> bool {
+        event.has_exchange() && routing_key == &Retry::No && event.has_response_recipient_id()
     }
 
     fn publish(
@@ -181,7 +190,7 @@ impl ResponseProducer {
         exchange: &str,
         routing_key: Retry,
     ) -> Box<Future<Item = Option<bool>, Error = io::Error>> {
-        if Self::can_reply(&event, routing_key) {
+        if Self::can_reply(&event, &routing_key) {
             let response_routing_key = event.get_response_recipient_id();
             let response = event.get_apple().get_result();
             let current_time = time::get_time();
@@ -241,7 +250,7 @@ impl ResponseProducer {
         } else {
             channel.basic_publish(
                 exchange,
-                "no_retry",
+                routing_key.into(),
                 &event.write_to_bytes().unwrap(),
                 &BasicPublishOptions {
                     mandatory: false,
