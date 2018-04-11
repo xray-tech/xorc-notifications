@@ -4,7 +4,7 @@ use tokio_core::net::TcpStream;
 use lapin::client::{Client, ConnectionOptions};
 use lapin::channel::*;
 use lapin::types::FieldTable;
-use apns2::error::Error;
+use a2::error::Error;
 use events::push_notification::PushNotification;
 use protobuf::parse_from_bytes;
 use config::Config;

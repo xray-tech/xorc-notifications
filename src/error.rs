@@ -1,4 +1,4 @@
-use apns2::response::ErrorReason;
+use a2::response::ErrorReason;
 use events::apple_notification::ApnsResult_Reason;
 use events::apple_notification::ApnsResult_Reason::*;
 use events::apple_notification::ApnsResult_Status;
