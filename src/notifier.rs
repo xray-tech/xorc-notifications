@@ -1,16 +1,20 @@
 use events::push_notification::PushNotification;
-use apns2::request::notification::*;
-use apns2::request::payload::Payload;
-use apns2::error::Error;
-use apns2::client::FutureResponse;
 use serde_json::{self, Value};
 use serde_json::error::Error as JsonError;
 use tokio_core::reactor::Handle;
 use certificate_registry::ApnsConnectionParameters;
-use apns2::client::Client;
 use std::io::Cursor;
 use std::time::Duration;
 use tokio_timer::Timeout;
+
+use a2::{
+    request::{
+        notification::*,
+        payload::Payload,
+    },
+    error::Error,
+    client::{FutureResponse, Client},
+};
 
 pub struct Notifier {
     client: Client,

@@ -12,7 +12,7 @@ extern crate chan;
 extern crate serde_derive;
 
 extern crate serde;
-extern crate apns2;
+extern crate a2;
 extern crate argparse;
 extern crate chan_signal;
 extern crate env_logger;

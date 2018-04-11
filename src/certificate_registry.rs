@@ -5,8 +5,8 @@ use postgres::error::Error as PostgresError;
 use r2d2;
 use r2d2_postgres::{PostgresConnectionManager, TlsMode};
 use std::time::Duration;
-use apns2::error::Error;
-use apns2::client::Endpoint;
+use a2::error::Error;
+use a2::client::Endpoint;
 
 #[derive(Debug)]
 pub enum CertificateError {

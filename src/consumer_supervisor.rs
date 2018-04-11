@@ -5,7 +5,7 @@ use certificate_registry::CertificateRegistry;
 use std::time::Duration;
 use std::thread::JoinHandle;
 use time::Timespec;
-use apns2::error;
+use a2::error;
 use std::collections::HashMap;
 use std::thread;
 use certificate_registry::{ApnsConnectionParameters, Application, CertificateError};
