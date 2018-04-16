@@ -1,7 +1,6 @@
 use events::push_notification::PushNotification;
 use serde_json::{self, Value};
 use serde_json::error::Error as JsonError;
-use tokio_core::reactor::Handle;
 use certificate_registry::ApnsConnectionParameters;
 use std::io::Cursor;
 use std::time::Duration;
@@ -23,15 +22,14 @@ pub struct Notifier {
 
 impl Notifier {
     pub fn new(
-        handle: &Handle,
         connection_parameters: ApnsConnectionParameters,
         topic: String,
     ) -> Result<Notifier, Error> {
         let client = match connection_parameters {
             ApnsConnectionParameters::Certificate {pkcs12, password, endpoint} =>
-                Client::certificate(&mut Cursor::new(&pkcs12), &password, handle, endpoint)?,
+                Client::certificate(&mut Cursor::new(&pkcs12), &password, endpoint)?,
             ApnsConnectionParameters::Token {pkcs8, key_id, team_id, endpoint} =>
-                Client::token(&mut Cursor::new(&pkcs8), key_id.as_ref(), team_id.as_ref(), handle, endpoint)?,
+                Client::token(&mut Cursor::new(&pkcs8), key_id.as_ref(), team_id.as_ref(), endpoint)?,
         };
 
         Ok(Notifier { client, topic })
