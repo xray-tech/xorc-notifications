@@ -8,8 +8,6 @@ use env_logger;
 #[derive(Debug)]
 pub enum LogAction {
     ConsumerCreate,
-    ConsumerRestart,
-    ConsumerStart,
     ConsumerDelete,
     NotificationResult,
 }

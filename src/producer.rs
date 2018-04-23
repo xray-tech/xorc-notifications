@@ -1,317 +1,97 @@
-use std::sync::Arc;
-use tokio_core::reactor::Core;
-use tokio_core::net::TcpStream;
-use lapin::client::{Client, ConnectionOptions};
-use lapin::channel::*;
-use lapin::types::FieldTable;
-use a2::error::Error;
-use a2::response::{ErrorReason, Response};
-use events::header::Header;
-use events::push_notification::PushNotification;
-use events::apple_notification::*;
-use events::notification_result::{NotificationResult, NotificationResult_Error};
-use events::apple_notification::ApnsResult_Reason::*;
-use events::apple_notification::ApnsResult_Status::*;
+use rdkafka::{
+    config::ClientConfig,
+    producer::{FutureProducer, DeliveryFuture},
+};
+
+use std::{
+    sync::Arc,
+};
+
+use events::{
+    header::Header,
+    apple_notification::*,
+    notification_result::{NotificationResult, NotificationResult_Error},
+    apple_notification::ApnsResult_Reason::*,
+    apple_notification::ApnsResult_Status::*,
+    push_notification::PushNotification,
+};
+
+use gelf::{
+    Level as GelfLevel,
+    Message as GelfMessage,
+    Error as GelfError
+};
+
+use a2::{
+    response::Response,
+    error::Error,
+};
+
+use protobuf::{Message as ProtoMessage};
 use config::Config;
-use heck::SnakeCase;
 use logger::{GelfLogger, LogAction};
-use gelf::{Error as GelfError, Level as GelfLevel, Message as GelfMessage};
-use futures::{Future, Stream};
-use futures::future::ok;
-use futures::sync::mpsc::Receiver;
-use std::thread;
-use std::net::{SocketAddr, ToSocketAddrs};
-use protobuf::Message;
-use std::io;
-use std::str::FromStr;
-use time;
 use metrics::*;
-use consumer_supervisor::{CONSUMER_FAILURES, MAX_FAILURES};
-use chan;
+use heck::SnakeCase;
+use time;
 
-pub type ApnsData = (PushNotification, Result<Response, Error>);
-
-pub struct ResponseProducer {
+pub struct ApnsProducer {
     config: Arc<Config>,
     logger: Arc<GelfLogger>,
+    producer: FutureProducer,
 }
 
-#[derive(Debug, PartialEq)]
-enum Retry {
-    Yes,
-    No,
-}
+impl ApnsProducer {
+    pub fn new(config: Arc<Config>, logger: Arc<GelfLogger>) -> ApnsProducer {
+        let producer = ClientConfig::new()
+            .set("bootstrap.servers", &config.kafka.brokers)
+            .set("produce.offset.report", "true")
+            .create()
+            .expect("Producer creation error");
 
-impl Into<&'static str> for Retry {
-    fn into(self) -> &'static str {
-        match self {
-            Retry::Yes => "retry",
-            _ => "no_retry"
-        }
-    }
-}
-
-impl ResponseProducer {
-    pub fn new(config: Arc<Config>, logger: Arc<GelfLogger>) -> ResponseProducer {
-        ResponseProducer {
-            config: config,
-            logger: logger,
+        ApnsProducer {
+            config,
+            logger,
+            producer,
         }
     }
 
-    pub fn run(&mut self, rx_consumers: Receiver<ApnsData>, panic_button: chan::Sender<()>) {
-        let mut core = Core::new().unwrap();
-        let handle = core.handle();
-
-        let address: SocketAddr = format!(
-            "{}:{}",
-            self.config.rabbitmq.host, self.config.rabbitmq.port
-        ).to_socket_addrs()
-            .unwrap()
-            .next()
-            .unwrap();
-
-        let connection_options = ConnectionOptions {
-            username: self.config.rabbitmq.login.clone(),
-            password: self.config.rabbitmq.password.clone(),
-            vhost: self.config.rabbitmq.vhost.clone(),
-            ..Default::default()
-        };
-
-        let work = TcpStream::connect(&address, &handle)
-            .and_then(move |stream| Client::connect(stream, &connection_options))
-            .and_then(|(client, heartbeat_future_fn)| {
-                let heartbeat_client = client.clone();
-
-                thread::Builder::new()
-                    .name("heartbeat thread".to_string())
-                    .spawn(move || {
-                        match Core::new()
-                            .unwrap()
-                            .run(heartbeat_future_fn(&heartbeat_client))
-                        {
-                            Ok(s) => {
-                                info!("Producer heartbeat thread exited cleanly ({:?})", s);
-                            },
-                            Err(e) => {
-                                error!("Producer heartbeat thread crashed, going down... ({:?})", e);
-                                panic_button.send(());
-                            },
-                        }
-                    })
-                    .unwrap();
-
-                client.create_channel()
-            })
-            .and_then(|channel| {
-                channel.exchange_declare(
-                    &self.config.rabbitmq.response_exchange,
-                    &self.config.rabbitmq.response_exchange_type,
-                    &ExchangeDeclareOptions {
-                        passive: false,
-                        durable: true,
-                        auto_delete: false,
-                        internal: false,
-                        nowait: false,
-                        ..Default::default()
-                    },
-                    &FieldTable::new(),
-                ).and_then(move |_| {
-                    rx_consumers.for_each(move |item| {
-                        let work = match item {
-                            (event, Ok(response)) => {
-                                let _ = Self::log_result(
-                                    "Successfully sent a push notification",
-                                    &self.logger, &event, Some(&response), None);
-
-                                Self::handle_response(
-                                    &channel, &self.config.rabbitmq.response_exchange,
-                                    event)
-                            }
-                            (event, Err(Error::ResponseError(response))) => {
-                                let _ = Self::log_result(
-                                    "Error sending a push notification",
-                                    &self.logger, &event, Some(&response), None);
-
-                                Self::handle_error(
-                                    &channel, &self.config.rabbitmq.response_exchange,
-                                    event, response)
-                            }
-                            (event, Err(Error::TimeoutError)) => {
-                                let _ = Self::log_result(
-                                    "Timeout when sending a push notification",
-                                    &self.logger, &event, None, Some(Error::TimeoutError));
-
-                                Self::mark_failure(event.get_application_id(), 1);
-
-                                Self::handle_fatal(
-                                    &channel, &self.config.rabbitmq.response_exchange,
-                                    ApnsResult_Status::Timeout, event)
-                            }
-                            (event, Err(Error::ConnectionError)) => {
-                                let _ = Self::log_result(
-                                    "Connection error",
-                                    &self.logger, &event, None, Some(Error::ConnectionError));
-
-                                Self::mark_failure(event.get_application_id(), MAX_FAILURES);
-
-                                Self::handle_fatal(
-                                    &channel, &self.config.rabbitmq.response_exchange,
-                                    ApnsResult_Status::MissingChannel, event)
-                            }
-                            (event, Err(e)) => {
-                                error!("Fatal error when sending a push notification, restarting consumer: {:?}", e);
-
-                                Self::mark_failure(event.get_application_id(), MAX_FAILURES);
-
-                                Self::handle_fatal(
-                                    &channel, &self.config.rabbitmq.response_exchange,
-                                    ApnsResult_Status::Unknown, event)
-                            }
-                        }.then(|_| ok(()));
-
-                        handle.spawn(work);
-
-                        Ok(())
-                    }).then(|_| ok(()))
-                })
-            });
-
-        core.run(work).unwrap();
-    }
-
-    fn can_reply(event: &PushNotification, routing_key: &Retry) -> bool {
-        event.has_exchange() && routing_key == &Retry::No && event.has_response_recipient_id()
-    }
-
-    fn publish(
-        channel: &Channel<TcpStream>,
-        event: PushNotification,
-        exchange: &str,
-        routing_key: Retry,
-    ) -> Box<Future<Item = Option<bool>, Error = io::Error>> {
-        if Self::can_reply(&event, &routing_key) {
-            let response_routing_key = event.get_response_recipient_id();
-            let response = event.get_apple().get_result();
-            let current_time = time::get_time();
-            let mut header = Header::new();
-
-            header.set_created_at(
-                (current_time.sec as i64 * 1000) + (current_time.nsec as i64 / 1000 / 1000),
-            );
-            header.set_source(String::from("apns"));
-            header.set_recipient_id(String::from(response_routing_key));
-            header.set_field_type(String::from("notification.NotificationResult"));
-
-            let mut result_event = NotificationResult::new();
-            result_event.set_header(header);
-            result_event.set_universe(String::from(event.get_universe()));
-            result_event.set_correlation_id(String::from(event.get_correlation_id()));
-
-            match response.get_status() {
-                Success => {
-                    result_event.set_delete_user(false);
-                    result_event.set_successful(true);
-                }
-                Unregistered => {
-                    result_event.set_delete_user(true);
-                    result_event.set_successful(false);
-                    result_event.set_error(NotificationResult_Error::Unsubscribed);
-                }
-                _ => {
-                    match response.get_reason() {
-                        DeviceTokenNotForTopic | BadDeviceToken => {
-                            result_event.set_delete_user(true);
-                            result_event.set_successful(false);
-                            result_event.set_reason(format!("{:?}", response.get_reason()));
-                            result_event.set_error(NotificationResult_Error::Unsubscribed);
-                        },
-                        _ => {
-                            result_event.set_delete_user(false);
-                            result_event.set_successful(false);
-                            result_event.set_reason(format!("{:?}", response.get_status()));
-                            result_event.set_error(NotificationResult_Error::Other);
-                        }
-                    }
-                }
-            }
-
-            channel.basic_publish(
-                event.get_exchange(),
-                response_routing_key,
-                &result_event.write_to_bytes().unwrap(),
-                &BasicPublishOptions {
-                    mandatory: false,
-                    immediate: false,
-                    ..Default::default()
-                },
-                BasicProperties::default(),
-            )
+    fn get_retry_after(event: &PushNotification) -> u32 {
+        if event.has_retry_count() {
+            let base: u32 = 2;
+            base.pow(event.get_retry_count())
         } else {
-            channel.basic_publish(
-                exchange,
-                routing_key.into(),
-                &event.write_to_bytes().unwrap(),
-                &BasicPublishOptions {
-                    mandatory: false,
-                    immediate: false,
-                    ..Default::default()
-                },
-                BasicProperties::default(),
-            )
+            1
         }
     }
 
-    fn handle_response(
-        channel: &Channel<TcpStream>,
-        exchange: &str,
-        mut event: PushNotification,
-    ) -> Box<Future<Item = Option<bool>, Error = io::Error>> {
+    pub fn handle_ok(&self, mut event: PushNotification, response: Response) -> DeliveryFuture {
+        CALLBACKS_COUNTER.with_label_values(&["success"]).inc();
+
+        let _ = self.log_result(
+            "Successfully sent a push notification",
+            &event,
+            Some(&response),
+            None
+        );
+
         let mut apns_result = ApnsResult::new();
 
         apns_result.set_successful(true);
         apns_result.set_status(ApnsResult_Status::Success);
 
-        CALLBACKS_COUNTER.with_label_values(&["success"]).inc();
-
         event.mut_apple().set_result(apns_result);
 
-        Self::publish(channel, event, exchange, Retry::No)
+        self.publish(event, &self.config.kafka.output_topic)
     }
 
-    fn handle_fatal(
-        channel: &Channel<TcpStream>,
-        exchange: &str,
-        status: ApnsResult_Status,
-        mut event: PushNotification,
-    ) -> Box<Future<Item = Option<bool>, Error = io::Error>> {
-        let mut apns_result = ApnsResult::new();
-        let status_label = format!("{:?}", status).to_snake_case();
+    pub fn handle_err(&self, mut event: PushNotification, response: Response) -> DeliveryFuture {
+        let _ = self.log_result(
+            "Error sending a push notification",
+            &event,
+            Some(&response),
+            None
+        );
 
-        apns_result.set_status(status);
-        apns_result.set_successful(false);
-
-        let retry_after = if event.has_retry_count() {
-            let base: u32 = 2;
-            base.pow(event.get_retry_count())
-        } else {
-            1
-        };
-
-        CALLBACKS_COUNTER.with_label_values(&[&status_label]).inc();
-
-        event.mut_apple().set_result(apns_result);
-        event.set_retry_after(retry_after);
-
-        Self::publish(channel, event, exchange, Retry::Yes)
-    }
-
-    fn handle_error(
-        channel: &Channel<TcpStream>,
-        exchange: &str,
-        mut event: PushNotification,
-        response: Response,
-    ) -> Box<Future<Item = Option<bool>, Error = io::Error>> {
         let mut apns_result = ApnsResult::new();
         let status: ApnsResult_Status = response.code.into();
 
@@ -319,25 +99,11 @@ impl ResponseProducer {
         apns_result.set_successful(false);
 
         if let Some(ref error) = response.error {
-            match error.reason {
-                ErrorReason::ExpiredProviderToken
-                    | ErrorReason::IdleTimeout
-                    | ErrorReason::BadCertificate => Self::mark_failure(event.get_application_id(), MAX_FAILURES),
-                _ => (),
-            }
-
             apns_result.set_reason((&error.reason).into());
 
             if let Some(ts) = error.timestamp {
                 apns_result.set_timestamp(ts as i64);
             }
-        };
-
-        let retry_after = if event.has_retry_count() {
-            let base: u32 = 2;
-            base.pow(event.get_retry_count())
-        } else {
-            1
         };
 
         match response.error {
@@ -351,42 +117,115 @@ impl ResponseProducer {
             }
         }
 
-        let routing_key = match apns_result.get_reason() {
+        let topic = match apns_result.get_reason() {
             InternalServerError | Shutdown | ServiceUnavailable | ExpiredProviderToken => {
-                event.set_retry_after(retry_after);
-                Retry::Yes
+                let ra = Self::get_retry_after(&event);
+                event.set_retry_after(ra);
+
+                &self.config.kafka.retry_topic
             }
             _ => match apns_result.get_status() {
                 Timeout | Unknown | Forbidden => {
-                    event.set_retry_after(retry_after);
-                    Retry::Yes
+                    let ra = Self::get_retry_after(&event);
+                    event.set_retry_after(ra);
+
+                    &self.config.kafka.retry_topic
                 }
-                _ => Retry::No,
+                _ => &self.config.kafka.output_topic,
             },
         };
 
         event.mut_apple().set_result(apns_result);
-        Self::publish(channel, event, exchange, routing_key)
+        self.publish(event, topic)
     }
 
-    fn mark_failure(app_id: &str, error_level: i32) {
-        match i32::from_str(app_id) {
-            Ok(id) => {
-                let mut failures = CONSUMER_FAILURES.lock().unwrap();
-                let counter = failures.entry(id).or_insert(0);
-                *counter += error_level;
+    pub fn handle_fatal(&self, mut event: PushNotification, error: Error) -> DeliveryFuture {
+        let mut apns_result = ApnsResult::new();
+
+        let status = match error {
+            Error::TimeoutError => ApnsResult_Status::Timeout,
+            Error::ConnectionError => ApnsResult_Status::MissingChannel,
+            _ => ApnsResult_Status::Unknown,
+        };
+
+        let status_label = format!("{:?}", status).to_snake_case();
+
+        apns_result.set_status(status);
+        apns_result.set_successful(false);
+
+        CALLBACKS_COUNTER.with_label_values(&[&status_label]).inc();
+
+        event.mut_apple().set_result(apns_result);
+
+        let ra = Self::get_retry_after(&event);
+        event.set_retry_after(ra);
+
+        self.publish(event, &self.config.kafka.retry_topic)
+    }
+
+    fn publish(&self, event: PushNotification, topic: &str) -> DeliveryFuture {
+        let response = event.get_apple().get_result();
+        let current_time = time::get_time();
+        let mut header = Header::new();
+
+        header.set_created_at(
+            (current_time.sec as i64 * 1000) + (current_time.nsec as i64 / 1000 / 1000),
+        );
+        header.set_source(String::from("apns"));
+        header.set_recipient_id(String::from("MISSING TODO TODO TODO"));
+        header.set_field_type(String::from("notification.NotificationResult"));
+
+        let mut result_event = NotificationResult::new();
+        result_event.set_header(header);
+        result_event.set_universe(String::from(event.get_universe()));
+        result_event.set_correlation_id(String::from(event.get_correlation_id()));
+
+        match response.get_status() {
+            Success => {
+                result_event.set_delete_user(false);
+                result_event.set_successful(true);
             }
-            _ => (),
+            Unregistered => {
+                result_event.set_delete_user(true);
+                result_event.set_successful(false);
+                result_event.set_error(NotificationResult_Error::Unsubscribed);
+            }
+            _ => {
+                match response.get_reason() {
+                    DeviceTokenNotForTopic | BadDeviceToken => {
+                        result_event.set_delete_user(true);
+                        result_event.set_successful(false);
+                        result_event.set_reason(format!("{:?}", response.get_reason()));
+                        result_event.set_error(NotificationResult_Error::Unsubscribed);
+                    },
+                    _ => {
+                        result_event.set_delete_user(false);
+                        result_event.set_successful(false);
+                        result_event.set_reason(format!("{:?}", response.get_status()));
+                        result_event.set_error(NotificationResult_Error::Other);
+                    }
+                }
+            }
         }
+
+        self.producer.send_copy::<Vec<u8>, ()>(
+            topic,
+            None,
+            Some(&result_event.write_to_bytes().unwrap()),
+            None,
+            None,
+            1000
+        )
     }
 
-    fn log_result<'a>(
+    fn log_result(
+        &self,
         title: &str,
-        logger: &Arc<GelfLogger>,
         event: &PushNotification,
         response: Option<&Response>,
         error: Option<Error>
-    ) -> Result<(), GelfError> {
+    ) -> Result<(), GelfError>
+    {
         let mut test_msg = GelfMessage::new(String::from(title));
         test_msg.set_metadata("action", format!("{:?}", LogAction::NotificationResult))?;
 
@@ -425,8 +264,18 @@ impl ResponseProducer {
             }
         }
 
-        logger.log_message(test_msg);
+        self.logger.log_message(test_msg);
 
         Ok(())
+    }
+}
+
+impl Clone for ApnsProducer {
+    fn clone(&self) -> Self {
+        ApnsProducer {
+            config: self.config.clone(),
+            logger: self.logger.clone(),
+            producer: self.producer.clone(),
+        }
     }
 }

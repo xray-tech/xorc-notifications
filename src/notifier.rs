@@ -1,8 +1,8 @@
+use metrics::*;
 use events::push_notification::PushNotification;
 use serde_json::{self, Value};
 use serde_json::error::Error as JsonError;
-use certificate_registry::ApnsConnectionParameters;
-use std::io::Cursor;
+use std::io::Read;
 use std::time::Duration;
 use tokio_timer::Timeout;
 
@@ -12,27 +12,63 @@ use a2::{
         payload::Payload,
     },
     error::Error,
-    client::{FutureResponse, Client},
+    client::{FutureResponse, Client, Endpoint},
 };
+
+enum NotifierType {
+    Token,
+    Certificate,
+}
 
 pub struct Notifier {
     client: Client,
     topic: String,
+    notifier_type: NotifierType,
+}
+
+impl Drop for Notifier {
+    fn drop(&mut self) {
+        match self.notifier_type {
+            NotifierType::Token => {
+                TOKEN_CONSUMERS.dec();
+            },
+            NotifierType::Certificate => {
+                CERTIFICATE_CONSUMERS.dec();
+            }
+        }
+    }
 }
 
 impl Notifier {
-    pub fn new(
-        connection_parameters: ApnsConnectionParameters,
+    pub fn certificate<R>(
+        pkcs12: &mut R,
+        password: &str,
+        endpoint: Endpoint,
         topic: String,
-    ) -> Result<Notifier, Error> {
-        let client = match connection_parameters {
-            ApnsConnectionParameters::Certificate {pkcs12, password, endpoint} =>
-                Client::certificate(&mut Cursor::new(&pkcs12), &password, endpoint)?,
-            ApnsConnectionParameters::Token {pkcs8, key_id, team_id, endpoint} =>
-                Client::token(&mut Cursor::new(&pkcs8), key_id.as_ref(), team_id.as_ref(), endpoint)?,
-        };
+    ) -> Result<Notifier, Error>
+    where R: Read
+    {
+        let client = Client::certificate(pkcs12, password, endpoint)?;
+        let notifier_type = NotifierType::Certificate;
+        CERTIFICATE_CONSUMERS.inc();
 
-        Ok(Notifier { client, topic })
+        Ok(Notifier { client, topic, notifier_type })
+    }
+
+    pub fn token<R>(
+        pkcs8: &mut R,
+        key_id: &str,
+        team_id: &str,
+        endpoint: Endpoint,
+        topic: String,
+    ) -> Result<Notifier, Error>
+    where R: Read
+    {
+        let client = Client::token(pkcs8, key_id, team_id, endpoint)?;
+        let notifier_type = NotifierType::Token;
+        TOKEN_CONSUMERS.inc();
+
+        Ok(Notifier { client, topic, notifier_type })
     }
 
     pub fn notify(&self, event: &PushNotification) -> Timeout<FutureResponse> {

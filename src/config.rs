@@ -5,7 +5,7 @@ use toml;
 #[derive(Deserialize, Debug)]
 pub struct Config {
     pub postgres: PostgresConfig,
-    pub rabbitmq: RabbitMqConfig,
+    pub kafka: KafkaConfig,
     pub general: GeneralConfig,
     pub log: LogConfig,
 }
@@ -40,18 +40,13 @@ pub struct LogConfig {
 }
 
 #[derive(Deserialize, Debug)]
-pub struct RabbitMqConfig {
-    pub queue: String,
-    pub exchange: String,
-    pub exchange_type: String,
-    pub vhost: String,
-    pub host: String,
-    pub port: u16,
-    pub login: String,
-    pub password: String,
-    pub routing_key: String,
-    pub response_exchange: String,
-    pub response_exchange_type: String,
+pub struct KafkaConfig {
+    pub input_topic: String,
+    pub config_topic: String,
+    pub output_topic: String,
+    pub retry_topic: String,
+    pub group_id: String,
+    pub brokers: String,
 }
 
 #[derive(Deserialize, Debug)]

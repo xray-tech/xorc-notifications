@@ -29,12 +29,7 @@ serde_json = "1.0"
 tokio-core = "0.1"
 tokio-signal = "0.1"
 tokio-timer = "0.1"
-lapin-futures = "0.10"
-
-[dependencies.postgres]
-version = "0.15"
-default-features = true
-features = ["with-time"]
+rdkafka = "0.16"
 
 [build-dependencies]
 protoc-rust = "2.0"

@@ -3,8 +3,6 @@ extern crate lazy_static;
 #[macro_use]
 extern crate log;
 #[macro_use]
-extern crate postgres_derive;
-#[macro_use]
 extern crate prometheus;
 #[macro_use]
 extern crate chan;
@@ -20,11 +18,8 @@ extern crate futures;
 extern crate gelf;
 extern crate heck;
 extern crate hyper;
-extern crate lapin_futures as lapin;
-extern crate postgres;
+extern crate rdkafka;
 extern crate protobuf;
-extern crate r2d2;
-extern crate r2d2_postgres;
 extern crate serde_json;
 extern crate time;
 extern crate tokio_core;
@@ -35,35 +30,32 @@ extern crate toml;
 mod notifier;
 mod events;
 mod consumer;
+mod producer;
 mod logger;
 mod metrics;
 mod config;
-mod certificate_registry;
-mod producer;
-mod consumer_supervisor;
 mod error;
 
 use logger::GelfLogger;
 use metrics::StatisticsServer;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::thread;
-use std::thread::JoinHandle;
+use std::{
+    sync::Arc,
+    thread,
+    thread::JoinHandle,
+};
 use chan_signal::{notify, Signal};
 use argparse::{ArgumentParser, Store};
 use config::Config;
-use consumer_supervisor::ConsumerSupervisor;
-use futures::sync::oneshot;
-use futures::sync::mpsc;
-use producer::ResponseProducer;
+use futures::{
+    sync::oneshot,
+};
+use consumer::ApnsConsumer;
 
 fn main() {
     let mut config_file_location = String::from("./config/config.toml");
     let exit_signal = notify(&[Signal::INT, Signal::TERM]);
-    let (sdone, rdone) = chan::sync(0);
     let (server_tx, server_rx) = oneshot::channel();
-
-    let control = Arc::new(AtomicBool::new(true));
+    let (consumer_tx, consumer_rx) = oneshot::channel();
 
     {
         let mut ap = ArgumentParser::new();
@@ -83,26 +75,11 @@ fn main() {
 
     let mut threads: Vec<JoinHandle<_>> = Vec::new();
 
-    let (producer_tx, producer_rx) = mpsc::channel(10000);
-
     threads.push({
-        let mut supervisor =
-            ConsumerSupervisor::new(config.clone(), control.clone(), producer_tx, logger.clone());
-
         thread::spawn(move || {
-            info!("Starting consumer supervisor thread...");
-            supervisor.run();
-            info!("Exiting consumer supervisor thread...");
-        })
-    });
-
-    threads.push({
-        let mut producer = ResponseProducer::new(config.clone(), logger.clone());
-
-        thread::spawn(move || {
-            info!("Starting response producer thread...");
-            producer.run(producer_rx, sdone);
-            info!("Exiting response producer thread...");
+            debug!("Starting apns consumer...");
+            let mut consumer = ApnsConsumer::new(config.clone(), logger.clone(), 1);
+            consumer.consume(consumer_rx).unwrap();
         })
     });
 
@@ -118,23 +95,12 @@ fn main() {
             info!("Received signal: {:?}", signal);
 
             server_tx.send(()).unwrap();
-            control.store(false, Ordering::Relaxed);
+            consumer_tx.send(()).unwrap();
 
             for thread in threads {
                 thread.thread().unpark();
                 thread.join().unwrap();
             }
         },
-        rdone.recv() => {
-            info!("We killed ourselves, goodbye!");
-
-            server_tx.send(()).unwrap();
-            control.store(false, Ordering::Relaxed);
-
-            for thread in threads {
-                thread.thread().unpark();
-                thread.join().unwrap();
-            }
-        }
     }
 }
