@@ -7,8 +7,8 @@ extern crate env_logger;
 extern crate gelf;
 extern crate hyper;
 extern crate futures;
-extern crate tokio_core;
-
+extern crate tokio;
+extern crate http;
 extern crate fcm;
 extern crate amqp;
 extern crate chan_signal;
@@ -16,7 +16,6 @@ extern crate argparse;
 extern crate protobuf;
 extern crate toml;
 extern crate serde;
-extern crate time;
 extern crate postgres;
 extern crate r2d2;
 extern crate r2d2_postgres;

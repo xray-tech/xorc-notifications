@@ -1,7 +1,7 @@
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::AtomicBool;
 use std::collections::HashMap;
-use time::precise_time_s;
+use chrono::Utc;
 use thread::park_timeout;
 use std::time::Duration;
 
@@ -28,7 +28,7 @@ pub struct Consumer {
 
 struct ApiKey {
     pub key: Option<String>,
-    pub timestamp: f64,
+    pub timestamp: i64,
 }
 
 impl Drop for Consumer {
@@ -115,7 +115,7 @@ struct FcmConsumer {
     registry: Arc<CertificateRegistry>,
     notifier_tx: Sender<(Option<String>, PushNotification)>,
     certificates: HashMap<String, ApiKey>,
-    cache_ttl: f64,
+    cache_ttl: i64,
 }
 
 impl FcmConsumer {
@@ -124,7 +124,7 @@ impl FcmConsumer {
             notifier_tx: notifier_tx,
             certificates: HashMap::new(),
             registry: registry,
-            cache_ttl: 120.0,
+            cache_ttl: 120,
         }
     }
 
@@ -132,7 +132,7 @@ impl FcmConsumer {
         let fetch_key = |api_key: &str| {
             ApiKey {
                 key: Some(String::from(api_key)),
-                timestamp: precise_time_s(),
+                timestamp: Utc::now().timestamp(),
             }
         };
 
@@ -146,7 +146,7 @@ impl FcmConsumer {
 
                     certificates.insert(String::from(application_id), ApiKey {
                         key: None,
-                        timestamp: precise_time_s(),
+                        timestamp: Utc::now().timestamp(),
                     });
                 },
             }
@@ -161,7 +161,7 @@ impl FcmConsumer {
     }
 
     fn is_expired(&self, key: &ApiKey) -> bool {
-        precise_time_s() - key.timestamp >= self.cache_ttl
+        Utc::now().timestamp() - key.timestamp >= self.cache_ttl
     }
 }
 

@@ -2,7 +2,7 @@ use fcm::*;
 use events::push_notification::PushNotification;
 use events::google_notification::GoogleNotification_Priority;
 use std::collections::HashMap;
-use tokio_core::reactor::Core;
+use tokio;
 use futures::sync::mpsc::{Sender, Receiver};
 use futures::{Future, Stream, Sink};
 use producer::FcmData;
@@ -16,11 +16,9 @@ impl Notifier {
     }
 
     pub fn run(&self, consumer_rx: Receiver<(Option<String>, PushNotification)>, producer_tx: Sender<FcmData>) {
-        let mut core = Core::new().unwrap();
-        let handle = core.handle();
-        let client = Client::new(&handle).unwrap();
+        let client = Client::new().unwrap();
 
-        let sender = consumer_rx.for_each(|(api_key, event)| {
+        let sender = consumer_rx.for_each(move |(api_key, event)| {
             let tx = producer_tx.clone();
 
             match api_key {
@@ -37,19 +35,19 @@ impl Notifier {
                         tx.send((event, Some(res)))
                     }).then(|_| Ok(()));
 
-                    handle.spawn(work);
+                    tokio::spawn(work);
                 },
                 None => {
                     let work = tx.send((event, None)).then(|_| Ok(()));
 
-                    handle.spawn(work);
+                    tokio::spawn(work);
                 }
             }
 
             Ok(())
         });
 
-        core.run(sender).unwrap();
+        tokio::run(sender);
     }
 
     fn build_message(pn: &PushNotification, api_key: &str) -> Message {

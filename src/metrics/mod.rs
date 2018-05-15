@@ -1,14 +1,27 @@
-use prometheus::{CounterVec, Histogram, Gauge, TextEncoder, Encoder, self};
-use std::env;
-use futures::future::{ok, FutureResult};
+use hyper::{
+    Body, Request, Response, Server,
+    service::service_fn_ok,
+    rt::Future,
+};
+use prometheus::{
+    self,
+    CounterVec,
+    Histogram,
+    Gauge,
+    TextEncoder,
+    Encoder,
+};
+use futures::{
+    sync::oneshot::Receiver,
+};
+use std::{
+    env,
+    net::ToSocketAddrs,
+};
 
-use hyper::header::ContentType;
-use hyper::header::ContentLength;
-use hyper::server::{Http, Service, Request, Response};
-use hyper::mime::Mime;
-use hyper::Error as HyperError;
-use futures::sync::oneshot::Receiver;
-use futures::Future;
+use tokio;
+use http::header;
+
 
 lazy_static! {
     pub static ref CALLBACKS_COUNTER: CounterVec = register_counter_vec!(
@@ -38,41 +51,36 @@ lazy_static! {
 #[derive(Clone,Copy)]
 pub struct StatisticsServer;
 
-impl Service for StatisticsServer {
-    type Request = Request;
-    type Response = Response;
-    type Error = HyperError;
-    type Future = FutureResult<Response, HyperError>;
-
-    fn call(&self, _: Request) -> Self::Future {
+impl StatisticsServer {
+    fn service(_: Request<Body>) -> Response<Body> {
         let encoder = TextEncoder::new();
         let metric_families = prometheus::gather();
         let mut buffer = vec![];
 
         encoder.encode(&metric_families, &mut buffer).unwrap();
 
-        let content_type = ContentType(encoder.format_type().parse::<Mime>().unwrap());
-        let content_length = ContentLength(buffer.len() as u64);
+        let mut builder = Response::builder();
 
-        ok({
-            Response::new()
-                .with_header(content_length)
-                .with_header(content_type)
-                .with_body(buffer)
-        })
+        builder.header(
+            header::CONTENT_TYPE,
+            encoder.format_type()
+        );
+
+        builder.body(buffer.into()).unwrap()
     }
-}
 
-impl StatisticsServer {
     pub fn handle(rx: Receiver<()>) {
         let port = match env::var("PORT") {
             Ok(val) => val,
             Err(_) => String::from("8081"),
         };
+        let mut addr_iter = format!("0.0.0.0:{}", port).to_socket_addrs().unwrap();
+        let addr = addr_iter.next().unwrap();
 
-        let addr = format!("0.0.0.0:{}", port).parse().unwrap();
-        let server = Http::new().bind(&addr, || Ok(StatisticsServer)).unwrap();
+        let server = Server::bind(&addr)
+            .serve(|| service_fn_ok(Self::service))
+            .map_err(|e| println!("server error: {}", e));
 
-        server.run_until(rx.map_err(|_| ())).unwrap();
+        tokio::run(server.select2(rx).then(move |_| Ok(())))
     }
 }

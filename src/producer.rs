@@ -1,24 +1,49 @@
-use std::sync::Arc;
-use std::time::{SystemTime, Duration};
-use std::cmp;
-use time;
-use amqp::{Session, Channel, Table, Basic, Options};
-use amqp::protocol::basic::BasicProperties;
-use events::push_notification::PushNotification;
-use events::notification_result::{NotificationResult, NotificationResult_Error};
-use events::google_notification::FcmResult;
-use events::google_notification::FcmResult_Status::*;
-use events::header::Header;
-use hyper::header::RetryAfter;
-use fcm::response::{FcmError, FcmResponse};
+use std::{
+    sync::Arc,
+};
+
+use amqp::{
+    Session,
+    Channel,
+    Table,
+    Basic,
+    Options,
+    protocol::basic::BasicProperties
+};
+
+use events::{
+    push_notification::PushNotification,
+    notification_result::{NotificationResult, NotificationResult_Error},
+    google_notification::FcmResult,
+    google_notification::FcmResult_Status::*,
+    header::Header,
+};
+
+use futures::{
+    Stream,
+    sync::mpsc::Receiver,
+};
+
+use fcm::{
+    response::{
+        FcmError,
+        FcmResponse,
+    }
+};
+
+use gelf::{
+    Message as GelfMessage,
+    Error as GelfError,
+    Level as GelfLevel
+};
+
+use chrono::Utc;
+
 use config::Config;
-use futures::sync::mpsc::Receiver;
-use futures::Stream;
 use protobuf::core::Message;
 use metrics::{CALLBACKS_COUNTER, CALLBACKS_INFLIGHT};
 use std::sync::atomic::AtomicBool;
 use logger::GelfLogger;
-use gelf::{Message as GelfMessage, Error as GelfError, Level as GelfLevel};
 
 pub type FcmData = (PushNotification, Option<Result<FcmResponse, FcmError>>);
 
@@ -94,11 +119,9 @@ impl ResponseProducer {
         if Self::can_reply(&event, routing_key) {
             let response_routing_key = event.get_response_recipient_id();
             let response             = event.get_google().get_response();
-            let current_time         = time::get_time();
             let mut header           = Header::new();
 
-            header.set_created_at((current_time.sec as i64 * 1000) +
-                                  (current_time.nsec as i64 / 1000 / 1000));
+            header.set_created_at(Utc::now().timestamp_millis());
             header.set_source(String::from("fcm"));
             header.set_recipient_id(String::from(response_routing_key));
             header.set_field_type(String::from("notification.NotificationResult"));
@@ -167,26 +190,14 @@ impl ResponseProducer {
         fcm_result.set_successful(false);
 
         let routing_key = match error {
-            FcmError::ServerError(retry_after) => {
+            FcmError::ServerError(_) => {
                 fcm_result.set_status(ServerError);
 
-                let duration: u32 = match retry_after {
-                    Some(RetryAfter::Delay(duration)) =>
-                        cmp::max(0, duration.as_secs()) as u32,
-                    Some(RetryAfter::DateTime(retry_time)) => {
-                        let retry_system_time: SystemTime = retry_time.into();
-                        let retry_duration = retry_system_time.duration_since(SystemTime::now()).unwrap_or(Duration::new(0, 0));
-
-                        cmp::max(0, retry_duration.as_secs()) as u32
-                    }
-                    None => {
-                        if event.has_retry_count() {
-                            let base: u32 = 2;
-                            base.pow(event.get_retry_count())
-                        } else {
-                            1
-                        }
-                    }
+                let duration = if event.has_retry_count() {
+                    let base: u32 = 2;
+                    base.pow(event.get_retry_count())
+                } else {
+                    1
                 };
 
                 CALLBACKS_COUNTER.with_label_values(&["server_error"]).inc();
