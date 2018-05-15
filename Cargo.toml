@@ -6,7 +6,7 @@ build = "build.rs"
 
 [dependencies]
 a2 = { git = "https://github.com/pimeys/a2" }
-protobuf = "1.4"
+protobuf = "1.6"
 chan-signal = "0.3"
 chan = "0.1"
 argparse = "0.2"
@@ -20,7 +20,7 @@ time = "0.1"
 hyper = "0.11"
 r2d2 = "0.8"
 r2d2_postgres = "0.14"
-prometheus = "0.3"
+prometheus = { git = "https://github.com/flier/rust-prometheus.git", branch = "protobuf-1.6" }
 lazy_static = "1.0"
 postgres-derive = "0.3"
 heck = "0.3"
@@ -35,3 +35,6 @@ lapin-futures = "0.10"
 version = "0.15"
 default-features = true
 features = ["with-time"]
+
+[build-dependencies]
+protoc-rust = "1.5"

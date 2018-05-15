@@ -21,7 +21,7 @@ use futures::future::ok;
 use futures::sync::mpsc::Receiver;
 use std::thread;
 use std::net::{SocketAddr, ToSocketAddrs};
-use protobuf::core::Message;
+use protobuf::Message;
 use std::io;
 use std::str::FromStr;
 use time;
