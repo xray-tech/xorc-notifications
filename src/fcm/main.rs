@@ -29,6 +29,7 @@ mod producer;
 use common::{
     logger::GelfLogger,
     metrics::StatisticsServer,
+    kafka::PushConsumer,
 };
 
 use std::{
@@ -38,7 +39,7 @@ use std::{
 
 use config::Config;
 use chan_signal::{Signal, notify};
-use consumer::FcmConsumer;
+use consumer::FcmHandler;
 use futures::sync::oneshot;
 
 lazy_static! {
@@ -75,7 +76,13 @@ fn main() {
             thread::spawn(move || {
                 info!("Starting fcm consumer...");
 
-                let mut consumer = FcmConsumer::new(1);
+                let handler = FcmHandler::new();
+
+                let mut consumer = PushConsumer::new(
+                    handler,
+                    &CONFIG.kafka,
+                    1
+                );
 
                 if let Err(error) = consumer.consume(consumer_rx) {
                     error!("Error in consumer: {:?}", error);

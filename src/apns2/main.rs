@@ -33,6 +33,7 @@ mod config;
 use common::{
     metrics::StatisticsServer,
     logger::GelfLogger,
+    kafka::PushConsumer,
 };
 
 use std::{
@@ -45,7 +46,7 @@ use futures::{
     sync::oneshot,
 };
 
-use consumer::ApnsConsumer;
+use consumer::ApnsHandler;
 use chan_signal::{notify, Signal};
 use config::Config;
 
@@ -79,8 +80,18 @@ fn main() {
     threads.push({
         thread::spawn(move || {
             debug!("Starting apns consumer...");
-            let mut consumer = ApnsConsumer::new(1);
-            consumer.consume(consumer_rx).unwrap();
+            let handler = ApnsHandler::new();
+
+            let mut consumer = PushConsumer::new(
+                handler,
+                &CONFIG.kafka,
+                1
+            );
+
+            if let Err(error) = consumer.consume(consumer_rx) {
+                error!("Error in consumer: {:?}", error);
+            }
+
             debug!("Exiting apns consumer...");
         })
     });

@@ -1,11 +1,11 @@
 use std::fs::File;
 use std::io::prelude::*;
 use toml;
+use common::kafka;
 
 #[derive(Deserialize, Debug)]
 pub struct Config {
-    pub postgres: PostgresConfig,
-    pub kafka: KafkaConfig,
+    pub kafka: kafka::Config,
     pub general: GeneralConfig,
     pub log: LogConfig,
 }
@@ -37,23 +37,4 @@ pub struct GeneralConfig {
 #[derive(Deserialize, Debug)]
 pub struct LogConfig {
     pub host: String,
-}
-
-#[derive(Deserialize, Debug)]
-pub struct KafkaConfig {
-    pub input_topic: String,
-    pub config_topic: String,
-    pub output_topic: String,
-    pub retry_topic: String,
-    pub group_id: String,
-    pub brokers: String,
-}
-
-#[derive(Deserialize, Debug)]
-pub struct PostgresConfig {
-    pub uri: String,
-    pub pool_size: u32,
-    pub min_idle: u32,
-    pub idle_timeout: u64,
-    pub max_lifetime: u64,
 }
