@@ -9,10 +9,14 @@ use std::{
     collections::HashMap,
 };
 
+use kafka::{
+    Config,
+    offset_counter::OffsetCounter
+};
+
 use events::push_notification::PushNotification;
 use futures::{Future, sync::oneshot, Stream};
 use protobuf::parse_from_bytes;
-use kafka::{Config, OffsetCounter};
 use tokio_core::reactor::Core;
 
 pub trait EventHandler {
@@ -32,6 +36,8 @@ pub struct PushConsumer<H: EventHandler> {
 }
 
 impl<H: EventHandler> PushConsumer<H> {
+    /// A kafka consumer to consume push notification events. `EventHandler`
+    /// should contain the business logic.
     pub fn new(
         event_handler: H,
         config: &Config,
@@ -48,6 +54,7 @@ impl<H: EventHandler> PushConsumer<H> {
         }
     }
 
+    /// Consume until event is sent through `control`.
     pub fn consume(
         &mut self,
         control: oneshot::Receiver<()>,

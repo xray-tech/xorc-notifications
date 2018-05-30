@@ -1,7 +1,6 @@
 mod offset_counter;
 mod push_consumer;
 
-pub use self::offset_counter::OffsetCounter;
 pub use self::push_consumer::{PushConsumer, EventHandler};
 
 #[derive(Deserialize, Debug)]

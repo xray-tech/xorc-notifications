@@ -18,6 +18,7 @@ pub struct OffsetCounter<'a> {
 }
 
 impl<'a> OffsetCounter<'a> {
+    /// A helper to store Kafka offsets.
     pub fn new(consumer: &'a StreamConsumer) -> OffsetCounter<'a> {
         let counter = 0;
         let time = SystemTime::now();
@@ -29,6 +30,7 @@ impl<'a> OffsetCounter<'a> {
         }
     }
 
+    /// Stores offset every 10 seconds or 500 events.
     pub fn try_store_offset(&mut self, msg: &BorrowedMessage) -> Result<(), io::Error> {
         let should_commit = match self.time.elapsed() {
             Ok(elapsed) if elapsed.as_secs() > 10 || self.counter >= 500 =>
@@ -46,6 +48,7 @@ impl<'a> OffsetCounter<'a> {
         }
     }
 
+    /// Stores offset immediately.
     pub fn store_offset(&mut self, msg: &BorrowedMessage) -> Result<(), io::Error> {
         match self.consumer.store_offset(msg) {
             Err(kafka_error) => {
