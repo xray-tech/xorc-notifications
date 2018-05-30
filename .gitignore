@@ -1,5 +1,4 @@
-cert/*
-src/events/*
-!src/events/mod.rs
-config/config.toml
+src/apns2/events/*
+!src/apns2/events/mod.rs
+config/*.toml
 target
