@@ -26,7 +26,7 @@ use std::{
     io,
 };
 
-use events::{
+use common::events::{
     apple_config::*,
     push_notification::PushNotification,
 };
@@ -43,10 +43,10 @@ use a2::{
 
 use protobuf::{parse_from_bytes};
 use config::Config;
-use logger::{GelfLogger, LogAction};
+use common::logger::{GelfLogger, LogAction};
 use notifier::Notifier;
 use producer::ApnsProducer;
-use metrics::*;
+use common::metrics::*;
 
 pub struct ApnsConsumer {
     config: Arc<Config>,

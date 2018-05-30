@@ -1,23 +1,17 @@
 #[macro_use]
-extern crate lazy_static;
-#[macro_use]
-extern crate log;
-#[macro_use]
-extern crate prometheus;
-#[macro_use]
 extern crate chan;
 #[macro_use]
 extern crate serde_derive;
+#[macro_use]
+extern crate log;
 
 extern crate serde;
 extern crate a2;
 extern crate argparse;
 extern crate chan_signal;
-extern crate env_logger;
 extern crate futures;
 extern crate gelf;
 extern crate heck;
-extern crate hyper;
 extern crate rdkafka;
 extern crate protobuf;
 extern crate serde_json;
@@ -26,18 +20,18 @@ extern crate tokio_core;
 extern crate tokio_signal;
 extern crate tokio_timer;
 extern crate toml;
+extern crate common;
 
 mod notifier;
-mod events;
 mod consumer;
 mod producer;
-mod logger;
-mod metrics;
 mod config;
-mod error;
 
-use logger::GelfLogger;
-use metrics::StatisticsServer;
+use common::{
+    metrics::StatisticsServer,
+    logger::GelfLogger,
+};
+
 use std::{
     sync::Arc,
     thread,
@@ -69,7 +63,7 @@ fn main() {
     }
 
     let config = Arc::new(Config::parse(config_file_location));
-    let logger = Arc::new(GelfLogger::new(config.clone()).expect("Error initializing logger"));
+    let logger = Arc::new(GelfLogger::new(&config.log.host, "apns2").unwrap());
 
     info!("Apple Push Notification System starting up!");
 

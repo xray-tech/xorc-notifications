@@ -1,5 +1,3 @@
-use std::sync::Arc;
-use config::Config;
 use log::LevelFilter;
 use gelf::{Error, Logger, Message, UdpBackend, Level};
 use std::env;
@@ -18,7 +16,7 @@ pub struct GelfLogger {
 }
 
 impl GelfLogger {
-    pub fn new(config: Arc<Config>) -> Result<GelfLogger, Error> {
+    pub fn new(host: &str, application_name: &str) -> Result<GelfLogger, Error> {
         let log_level_filter = match env::var("RUST_LOG") {
             Ok(val) => match val.as_ref() {
                 "info" => LevelFilter::Info,
@@ -31,11 +29,18 @@ impl GelfLogger {
         };
 
         if let Ok(_) = env::var("RUST_GELF") {
-            let mut logger = Logger::new(Box::new(UdpBackend::new(&config.log.host)?))?;
-            let mut env_logger = Logger::new(Box::new(UdpBackend::new(&config.log.host)?))?;
+            let mut logger = Logger::new(Box::new(UdpBackend::new(host)?))?;
+            let mut env_logger = Logger::new(Box::new(UdpBackend::new(host)?))?;
 
-            logger.set_default_metadata(String::from("application_name"), String::from("apns2"));
-            env_logger.set_default_metadata(String::from("application_name"), String::from("apns2"));
+            logger.set_default_metadata(
+                String::from("application_name"),
+                application_name.to_string()
+            );
+
+            env_logger.set_default_metadata(
+                String::from("application_name"),
+                application_name.to_string()
+            );
 
             if let Ok(environment) = env::var("RUST_ENV") {
                 logger.set_default_metadata(

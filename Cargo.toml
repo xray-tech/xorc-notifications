@@ -33,6 +33,10 @@ rdkafka = "0.16"
 [build-dependencies]
 protoc-rust = "2.0"
 
+[lib]
+name = "common"
+path = "src/common/lib.rs"
+
 [[bin]]
 name = "apns2"
 path = "src/apns2/main.rs"

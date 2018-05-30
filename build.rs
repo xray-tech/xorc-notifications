@@ -2,7 +2,7 @@ extern crate protoc_rust;
 
 fn main() {
     protoc_rust::run(protoc_rust::Args {
-        out_dir: "src/apns2/events",
+        out_dir: "src/common/events",
         input: &[
             "third_party/events/schema/common/header.proto",
             "third_party/events/schema/common/map_field_entry.proto",

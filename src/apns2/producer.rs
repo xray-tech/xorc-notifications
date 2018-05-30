@@ -7,15 +7,6 @@ use std::{
     sync::Arc,
 };
 
-use events::{
-    header::Header,
-    apple_notification::*,
-    notification_result::{NotificationResult, NotificationResult_Error},
-    apple_notification::ApnsResult_Reason::*,
-    apple_notification::ApnsResult_Status::*,
-    push_notification::PushNotification,
-};
-
 use gelf::{
     Level as GelfLevel,
     Message as GelfMessage,
@@ -29,10 +20,22 @@ use a2::{
 
 use protobuf::{Message as ProtoMessage};
 use config::Config;
-use logger::{GelfLogger, LogAction};
-use metrics::*;
+
 use heck::SnakeCase;
 use time;
+
+use common::{
+    logger::{GelfLogger, LogAction},
+    metrics::*,
+    events::{
+        header::Header,
+        apple_notification::*,
+        notification_result::{NotificationResult, NotificationResult_Error},
+        apple_notification::ApnsResult_Reason::*,
+        apple_notification::ApnsResult_Status::*,
+        push_notification::PushNotification,
+    },
+};
 
 pub struct ApnsProducer {
     config: Arc<Config>,

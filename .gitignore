@@ -1,4 +1,4 @@
-src/apns2/events/*
-!src/apns2/events/mod.rs
+src/common/events/*
+!src/common/events/mod.rs
 config/*.toml
 target
