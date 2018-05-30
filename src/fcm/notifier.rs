@@ -1,52 +1,34 @@
-use fcm::*;
-use common::events::push_notification::PushNotification;
-use common::events::google_notification::GoogleNotification_Priority;
-use std::collections::HashMap;
-use tokio;
-use futures::sync::mpsc::{Sender, Receiver};
-use futures::{Future, Stream, Sink};
-use producer::FcmData;
-use common::metrics::RESPONSE_TIMES_HISTOGRAM;
+use common::{
+    events::{
+        push_notification::PushNotification,
+        google_notification::GoogleNotification_Priority,
+    },
+};
 
-pub struct Notifier {}
+use fcm::*;
+use std::collections::HashMap;
+
+pub struct Notifier {
+    client: Client,
+}
 
 impl Notifier {
     pub fn new() -> Notifier {
-        Notifier {}
+        Notifier {
+            client: Client::new().unwrap(),
+        }
     }
 
-    pub fn run(&self, consumer_rx: Receiver<(Option<String>, PushNotification)>, producer_tx: Sender<FcmData>) {
-        let client = Client::new().unwrap();
-
-        let sender = consumer_rx.for_each(move |(api_key, event)| {
-            let tx = producer_tx.clone();
-
-            match api_key {
-                Some(ref key) => {
-                    let message = Self::build_message(&event, key);
-                    let timer = RESPONSE_TIMES_HISTOGRAM.start_timer();
-
-                    let work = client.send(message).then(|res| {
-                        timer.observe_duration();
-                        tx.send((event, Some(res)))
-                    }).then(|_| Ok(()));
-
-                    tokio::spawn(work);
-                },
-                None => {
-                    let work = tx.send((event, None)).then(|_| Ok(()));
-
-                    tokio::spawn(work);
-                }
-            }
-
-            Ok(())
-        });
-
-        tokio::run(sender);
+    pub fn notify(
+        &self,
+        event: &PushNotification,
+        api_key: &str,
+    ) -> FutureResponse
+    {
+        self.client.send(Self::gen_payload(event, api_key))
     }
 
-    fn build_message(pn: &PushNotification, api_key: &str) -> Message {
+    fn gen_payload(pn: &PushNotification, api_key: &str) -> Message {
         let notification = pn.get_google();
         let mut message  = MessageBuilder::new(api_key, pn.get_device_token());
 

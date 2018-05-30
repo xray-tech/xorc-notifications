@@ -1,14 +1,6 @@
-use std::{
-    sync::Arc,
-};
-
-use amqp::{
-    Session,
-    Channel,
-    Table,
-    Basic,
-    Options,
-    protocol::basic::BasicProperties
+use rdkafka::{
+    config::ClientConfig,
+    producer::{FutureProducer, DeliveryFuture},
 };
 
 use common::{
@@ -21,15 +13,9 @@ use common::{
     },
     metrics::{
         CALLBACKS_COUNTER,
-        CALLBACKS_INFLIGHT
     },
-    logger::GelfLogger,
 };
 
-use futures::{
-    Stream,
-    sync::mpsc::Receiver,
-};
 
 use fcm::{
     response::{
@@ -44,135 +30,46 @@ use gelf::{
     Level as GelfLevel
 };
 
+use ::{GLOG, CONFIG};
+
 use chrono::Utc;
-use config::Config;
 use protobuf::Message;
-use std::sync::atomic::AtomicBool;
 
-pub type FcmData = (PushNotification, Option<Result<FcmResponse, FcmError>>);
-
-pub struct ResponseProducer {
-    channel: Channel,
-    session: Session,
-    config: Arc<Config>,
-    logger: Arc<GelfLogger>
+pub struct FcmProducer {
+    producer: FutureProducer,
 }
 
-impl Drop for ResponseProducer {
-    fn drop(&mut self) {
-        let _ = self.channel.close(200, "Bye!");
-        let _ = self.session.close(200, "Good bye!");
-    }
-}
+impl FcmProducer {
+    pub fn new() -> FcmProducer {
+        let producer = ClientConfig::new()
+            .set("bootstrap.servers", &CONFIG.kafka.brokers)
+            .set("produce.offset.report", "true")
+            .create()
+            .expect("Producer creation error");
 
-impl ResponseProducer {
-    pub fn new(config: Arc<Config>, control: Arc<AtomicBool>, logger: Arc<GelfLogger>) -> ResponseProducer {
-        let options = Options {
-            vhost: config.rabbitmq.vhost.clone(),
-            host: config.rabbitmq.host.clone(),
-            port: config.rabbitmq.port,
-            login: config.rabbitmq.login.clone(),
-            password: config.rabbitmq.password.clone(), .. Default::default()
-        };
-
-        let mut session = Session::new(options, control.clone()).expect("Couldn't connect to RabbitMQ");
-        let mut channel = session.open_channel(1).expect("Couldn't open a RabbitMQ channel");
-
-        channel.exchange_declare(
-            &*config.rabbitmq.response_exchange,
-            &*config.rabbitmq.response_exchange_type,
-            false, // passive
-            true,  // durable
-            false, // auto_delete
-            false, // internal
-            false, // nowait
-            Table::new()).expect("Couldn't declare a RabbitMQ exchange");
-
-        ResponseProducer {
-            channel: channel,
-            session: session,
-            config: config.clone(),
-            logger: logger,
+        FcmProducer {
+            producer,
         }
     }
 
-    pub fn run(&mut self, rx: Receiver<FcmData>) {
-        let mut iterator = rx.wait();
-
-        while let Some(item) = iterator.next() {
-            CALLBACKS_INFLIGHT.dec();
-
-            match item {
-                Ok((event, Some(Ok(response)))) =>
-                    self.handle_response(event, response),
-                Ok((event, Some(Err(error)))) =>
-                    self.handle_error(event, error),
-                Ok((event, None)) =>
-                    self.handle_no_cert(event),
-                Err(e) =>
-                    error!("This should not happen! {:?}", e),
-            }
+    fn get_retry_after(event: &PushNotification) -> u32 {
+        if event.has_retry_count() {
+            let base: u32 = 2;
+            base.pow(event.get_retry_count())
+        } else {
+            1
         }
     }
 
-    fn can_reply(event: &PushNotification, routing_key: &str) -> bool {
-        event.has_exchange() && routing_key == "no_retry" && event.has_response_recipient_id()
-    }
-
-    fn publish(&mut self, event: PushNotification, routing_key: &str) {
-        if Self::can_reply(&event, routing_key) {
-            let response_routing_key = event.get_response_recipient_id();
-            let response             = event.get_google().get_response();
-            let mut header           = Header::new();
-
-            header.set_created_at(Utc::now().timestamp_millis());
-            header.set_source(String::from("fcm"));
-            header.set_recipient_id(String::from(response_routing_key));
-            header.set_field_type(String::from("notification.NotificationResult"));
-
-            let mut result_event = NotificationResult::new();
-            result_event.set_header(header);
-            result_event.set_universe(String::from(event.get_universe()));
-            result_event.set_correlation_id(String::from(event.get_correlation_id()));
-
-            match response.get_status() {
-                Success => {
-                    result_event.set_delete_user(false);
-                    result_event.set_successful(true);
-                },
-                NotRegistered => {
-                    result_event.set_delete_user(true);
-                    result_event.set_successful(false);
-                    result_event.set_error(NotificationResult_Error::Unsubscribed);
-                },
-                _ => {
-                    result_event.set_delete_user(false);
-                    result_event.set_successful(false);
-                    result_event.set_reason(format!("{:?}", response.get_status()));
-                    result_event.set_error(NotificationResult_Error::Other);
-                },
-            }
-
-            self.channel.basic_publish(
-                event.get_exchange(),
-                response_routing_key,
-                false,   // mandatory
-                false,   // immediate
-                BasicProperties { ..Default::default() },
-                result_event.write_to_bytes().expect("Couldn't serialize a protobuf event")).expect("Couldn't publish to RabbitMQ");
-        }
-
-        self.channel.basic_publish(
-            &*self.config.rabbitmq.response_exchange,
-            routing_key,
-            false,   // mandatory
-            false,   // immediate
-            BasicProperties { ..Default::default() },
-            event.write_to_bytes().expect("Couldn't serialize a protobuf event")).expect("Couldn't publish to RabbitMQ");
-    }
-
-    fn handle_no_cert(&mut self, mut event: PushNotification) {
-        let _ = self.log_result("Error sending a push notification", &event, Some("MissingCertificateOrToken"));
+    pub fn handle_no_cert(
+        &self,
+        mut event: PushNotification
+    ) -> DeliveryFuture
+    {
+        let _ = self.log_result(
+            "Error sending a push notification",
+            &event,
+            Some("MissingCertificateOrToken"));
 
         CALLBACKS_COUNTER.with_label_values(&["certificate_missing"]).inc();
 
@@ -183,10 +80,15 @@ impl ResponseProducer {
 
         event.mut_google().set_response(fcm_result);
 
-        self.publish(event, "no_retry");
+        self.publish(event, "no_retry")
     }
 
-    fn handle_error(&mut self, mut event: PushNotification, error: FcmError) {
+    pub fn handle_error(
+        &self,
+        mut event: PushNotification,
+        error: FcmError
+    ) -> DeliveryFuture
+    {
         let error_str = format!("{:?}", error);
         let _ = self.log_result("Error sending a push notification", &event, Some(&error_str));
 
@@ -196,17 +98,11 @@ impl ResponseProducer {
         let routing_key = match error {
             FcmError::ServerError(_) => {
                 fcm_result.set_status(ServerError);
-
-                let duration = if event.has_retry_count() {
-                    let base: u32 = 2;
-                    base.pow(event.get_retry_count())
-                } else {
-                    1
-                };
-
                 CALLBACKS_COUNTER.with_label_values(&["server_error"]).inc();
 
-                event.set_retry_after(duration);
+                let retry_after = Self::get_retry_after(&event);
+                event.set_retry_after(retry_after);
+
                 "retry"
             },
             FcmError::Unauthorized             => {
@@ -224,33 +120,15 @@ impl ResponseProducer {
 
         event.mut_google().set_response(fcm_result);
 
-        self.publish(event, routing_key);
+        self.publish(event, routing_key)
     }
 
-    fn log_result(&self, title: &str, event: &PushNotification, error: Option<&str>) -> Result<(), GelfError> {
-        let mut test_msg = GelfMessage::new(String::from(title));
-
-        test_msg.set_full_message(format!("{:?}", event)).
-            set_level(GelfLevel::Informational).
-            set_metadata("correlation_id", format!("{}", event.get_correlation_id()))?.
-            set_metadata("device_token",   format!("{}", event.get_device_token()))?.
-            set_metadata("app_id",         format!("{}", event.get_application_id()))?.
-            set_metadata("campaign_id",    format!("{}", event.get_campaign_id()))?.
-            set_metadata("event_source",   String::from(event.get_header().get_source()))?;
-
-        if let Some(msg) = error {
-            test_msg.set_metadata("successful", String::from("false"))?;
-            test_msg.set_metadata("error", format!("{}", msg))?;
-        } else {
-            test_msg.set_metadata("successful", String::from("true"))?;
-        }
-
-        self.logger.log_message(test_msg);
-
-        Ok(())
-    }
-
-    fn handle_response(&mut self, mut event: PushNotification, response: FcmResponse) {
+    pub fn handle_response(
+        &self,
+        mut event: PushNotification,
+        response: FcmResponse
+    ) -> DeliveryFuture
+    {
         let mut fcm_result = FcmResult::new();
 
         if let Some(multicast_id) = response.multicast_id {
@@ -322,6 +200,84 @@ impl ResponseProducer {
 
         event.mut_google().set_response(fcm_result);
 
-        self.publish(event, "no_retry");
+        self.publish(event, "no_retry")
+    }
+
+    fn publish(
+        &self,
+        event: PushNotification,
+        topic: &str
+    ) -> DeliveryFuture
+    {
+        let response             = event.get_google().get_response();
+        let mut header           = Header::new();
+
+        header.set_created_at(Utc::now().timestamp_millis());
+        header.set_source(String::from("fcm"));
+        header.set_recipient_id(String::from("MISSING TODO TODO TODO"));
+        header.set_field_type(String::from("notification.NotificationResult"));
+
+        let mut result_event = NotificationResult::new();
+        result_event.set_header(header);
+        result_event.set_universe(String::from(event.get_universe()));
+        result_event.set_correlation_id(String::from(event.get_correlation_id()));
+
+        match response.get_status() {
+            Success => {
+                result_event.set_delete_user(false);
+                result_event.set_successful(true);
+            },
+            NotRegistered => {
+                result_event.set_delete_user(true);
+                result_event.set_successful(false);
+                result_event.set_error(NotificationResult_Error::Unsubscribed);
+            },
+            _ => {
+                result_event.set_delete_user(false);
+                result_event.set_successful(false);
+                result_event.set_reason(format!("{:?}", response.get_status()));
+                result_event.set_error(NotificationResult_Error::Other);
+            },
+        }
+
+        self.producer.send_copy::<Vec<u8>, ()>(
+            topic,
+            None,
+            Some(&result_event.write_to_bytes().unwrap()),
+            None,
+            None,
+            1000
+        )
+    }
+
+    fn log_result(&self, title: &str, event: &PushNotification, error: Option<&str>) -> Result<(), GelfError> {
+        let mut test_msg = GelfMessage::new(String::from(title));
+
+        test_msg.set_full_message(format!("{:?}", event)).
+            set_level(GelfLevel::Informational).
+            set_metadata("correlation_id", format!("{}", event.get_correlation_id()))?.
+            set_metadata("device_token",   format!("{}", event.get_device_token()))?.
+            set_metadata("app_id",         format!("{}", event.get_application_id()))?.
+            set_metadata("campaign_id",    format!("{}", event.get_campaign_id()))?.
+            set_metadata("event_source",   String::from(event.get_header().get_source()))?;
+
+        if let Some(msg) = error {
+            test_msg.set_metadata("successful", String::from("false"))?;
+            test_msg.set_metadata("error", format!("{}", msg))?;
+        } else {
+            test_msg.set_metadata("successful", String::from("true"))?;
+        }
+
+        GLOG.log_message(test_msg);
+
+        Ok(())
+    }
+}
+
+impl Clone for FcmProducer {
+    fn clone(&self) -> Self {
+        FcmProducer {
+            producer: self.producer.clone(),
+        }
     }
 }

@@ -1,205 +1,183 @@
 use std::{
-    sync::{Arc, Mutex},
-    sync::atomic::AtomicBool,
     collections::HashMap,
-    time::Duration,
-};
-
-use amqp::{
-    Session,
-    Channel,
-    Table,
-    Basic,
-    Options,
-    Consumer as AmqpConsumer,
-    protocol::basic
 };
 
 use common::{
-    metrics::CALLBACKS_INFLIGHT,
+    metrics::*,
     events::push_notification::PushNotification,
+    events::google_config::GoogleConfig,
+    kafka::OffsetCounter,
 };
 
-use chrono::Utc;
-use thread::park_timeout;
-use futures::{Sink, Future};
-use futures::sync::mpsc::Sender;
+use futures::{
+    Future,
+    Stream,
+    sync::oneshot,
+    future::ok,
+};
+
+use rdkafka::{
+    Message,
+    config::ClientConfig,
+    consumer::{Consumer, stream_consumer::StreamConsumer, CommitMode},
+    topic_partition_list::{TopicPartitionList, Offset},
+};
+
+use tokio_core::{
+    reactor::Core,
+};
+
+use notifier::Notifier;
+use producer::FcmProducer;
 use protobuf::parse_from_bytes;
-use config::Config;
 use hyper::error::Error;
-use certificate_registry::{CertificateRegistry, CertificateError};
+use gelf;
 
-pub struct Consumer {
-    channel: Mutex<Channel>,
-    session: Session,
-    config: Arc<Config>,
-    registry: Arc<CertificateRegistry>,
+pub struct FcmConsumer {
+    producer: FcmProducer,
+    api_keys: HashMap<String, String>,
+    partition: i32,
 }
 
-struct ApiKey {
-    pub key: Option<String>,
-    pub timestamp: i64,
-}
+use ::{CONFIG, GLOG};
 
-impl Drop for Consumer {
-    fn drop(&mut self) {
-        let mut channel = self.channel.lock()
-            .expect("Couldn't get the RabbitMQ channel mutex. RabbitMQ connection is not closed properly");
+impl FcmConsumer {
+    pub fn new(partition: i32) -> FcmConsumer {
+        let api_keys = HashMap::new();
+        let producer = FcmProducer::new();
 
-        let _ = channel.close(200, "Bye!");
-        let _ = self.session.close(200, "Good bye!");
-    }
-}
-
-impl Consumer {
-    pub fn new(control: Arc<AtomicBool>,
-               config: Arc<Config>,
-               registry: Arc<CertificateRegistry>) -> Consumer {
-        let mut session = Session::new(Options {
-            vhost: config.rabbitmq.vhost.clone(),
-            host: config.rabbitmq.host.clone(),
-            port: config.rabbitmq.port,
-            login: config.rabbitmq.login.clone(),
-            password: config.rabbitmq.password.clone(), .. Default::default()
-        }, control.clone()).expect("Couldn't connect to RabbitMQ");
-
-        let mut channel = session.open_channel(1).expect("Couldn't open a RabbitMq channel");
-
-        channel.queue_declare(
-            &*config.rabbitmq.queue,
-            false, // passive
-            true,  // durable
-            false, // exclusive
-            false, // auto_delete
-            false, // nowait
-            Table::new()).expect("Couldn't declare a RabbitMQ queue");
-
-        channel.exchange_declare(
-            &*config.rabbitmq.exchange,
-            &*config.rabbitmq.exchange_type,
-            false, // passive
-            true,  // durable
-            false, // auto_delete
-            false, // internal
-            false, // nowait
-            Table::new()).expect("Couldn't declare a RabbitMQ exchange");
-
-        channel.queue_bind(
-            &*config.rabbitmq.queue,
-            &*config.rabbitmq.exchange,
-            &*config.rabbitmq.routing_key,
-            false, // nowait
-            Table::new()).expect("Couldn't bind a RabbitMQ queue to exchange");
-
-        Consumer {
-            channel: Mutex::new(channel),
-            session: session,
-            config: config,
-            registry: registry,
+        FcmConsumer {
+            producer,
+            api_keys,
+            partition,
         }
     }
 
-    pub fn consume(&self, notifier_tx: Sender<(Option<String>, PushNotification)>) -> Result<(), Error> {
-        let mut channel = self.channel.lock().expect("Couldn't get the RabbitMQ channel mutex");
-        let consumer = FcmConsumer::new(notifier_tx, self.registry.clone());
+    pub fn consume(
+        &mut self,
+        control: oneshot::Receiver<()>,
+    ) -> Result<(), Error>
+    {
+        let mut core = Core::new().unwrap();
+        let handle = core.handle();
 
-        channel.basic_prefetch(100).ok().expect("failed to prefetch");
+        let consumer: StreamConsumer = ClientConfig::new()
+            .set("group.id", &CONFIG.kafka.group_id)
+            .set("bootstrap.servers", &CONFIG.kafka.brokers)
+            .set("enable.auto.commit", "false")
+            .set("auto.offset.reset", "latest")
+            .set("enable.partition.eof", "false")
+            .create()
+            .expect("Consumer creation failed");
 
-        let consumer_name = channel.basic_consume(consumer,
-                                                  &*self.config.rabbitmq.queue,
-                                                  "fcm_consumer",
-                                                  true,  // no local
-                                                  false, // no ack
-                                                  false, // exclusive
-                                                  false, // nowait
-                                                  Table::new());
+        let mut topic_map = HashMap::new();
+        topic_map.insert((CONFIG.kafka.config_topic.clone(), 1), Offset::Beginning);
+        topic_map.insert((CONFIG.kafka.input_topic.clone(), self.partition), Offset::Stored);
 
-        info!("Starting consumer {:?}", consumer_name);
-        channel.start_consuming();
+        let partitions = TopicPartitionList::from_topic_map(&topic_map);
+        consumer.assign(&partitions).expect("Can't subscribe to specified topics");
+
+        let mut offset_counter = OffsetCounter::new(&consumer);
+        let notifier = Notifier::new();
+
+        let processed_stream = consumer.start()
+            .filter_map(|result| {
+                match result {
+                    Ok(msg) => Some(msg),
+                    Err(e) => {
+                        warn!("Error while receiving from Kafka: {:?}", e);
+                        None
+                    }
+                }
+            }).for_each(|msg| {
+                match msg.topic() {
+                    t if t == CONFIG.kafka.input_topic => {
+                        if let Err(e) = offset_counter.try_store_offset(&msg) {
+                            warn!("Error storing offset: #{}", e);
+                        }
+
+                        if let Ok(event) = parse_from_bytes::<PushNotification>(msg.payload().unwrap()) {
+                            let producer = self.producer.clone();
+                            let timer = RESPONSE_TIMES_HISTOGRAM.start_timer();
+
+                            CALLBACKS_INFLIGHT.inc();
+
+                            if let Some(api_key) = self.api_keys.get(event.get_application_id()) {
+                                let notification_send = notifier
+                                    .notify(&event, api_key)
+                                    .then(move |result| {
+                                        timer.observe_duration();
+                                        CALLBACKS_INFLIGHT.dec();
+
+                                        match result {
+                                            Ok(response) =>
+                                                producer.handle_response(
+                                                    event,
+                                                    response
+                                                ),
+                                            Err(error) =>
+                                                producer.handle_error(
+                                                    event,
+                                                    error
+                                                ),
+                                        }
+                                    })
+                                    .then(|_| ok(()));
+
+                                handle.spawn(notification_send);
+                            } else {
+                                producer.handle_no_cert(event);
+                            }
+                        } else {
+                            error!("Error parsing protobuf");
+                        }
+                    },
+                    t if t == CONFIG.kafka.config_topic => {
+                        if let Ok(mut event) = parse_from_bytes::<GoogleConfig>(msg.payload().unwrap()) {
+                            self.handle_config(&mut event);
+                        } else {
+                            error!("Error parsing protobuf");
+                        }
+                    },
+                    t => {
+                        error!("Unsupported topic: {}", t);
+                    }
+                }
+
+                Ok(())
+            });
+
+        let _ = core.run(
+            processed_stream
+                .select2(control)
+                .then(|_| consumer.commit_consumer_state(CommitMode::Sync))
+        );
 
         Ok(())
     }
-}
 
-struct FcmConsumer {
-    registry: Arc<CertificateRegistry>,
-    notifier_tx: Sender<(Option<String>, PushNotification)>,
-    certificates: HashMap<String, ApiKey>,
-    cache_ttl: i64,
-}
+    fn handle_config(&mut self, event: &mut GoogleConfig) {
+        let _ = self.log_config_change("Push config update", &event);
 
-impl FcmConsumer {
-    pub fn new(notifier_tx: Sender<(Option<String>, PushNotification)>, registry: Arc<CertificateRegistry>) -> FcmConsumer {
-        FcmConsumer {
-            notifier_tx: notifier_tx,
-            certificates: HashMap::new(),
-            registry: registry,
-            cache_ttl: 120,
-        }
+        self.api_keys.insert(
+            String::from(event.get_application_id()),
+            String::from(event.get_api_key()),
+        );
     }
 
-    fn update_certificates(&mut self, application_id: &str) {
-        let fetch_key = |api_key: &str| {
-            ApiKey {
-                key: Some(String::from(api_key)),
-                timestamp: Utc::now().timestamp(),
-            }
-        };
+    fn log_config_change(
+        &self,
+        title: &str,
+        event: &GoogleConfig,
+    ) -> Result<(), gelf::Error>
+    {
+        let mut test_msg = gelf::Message::new(String::from(title));
 
-        let add_key = move |result: Result<ApiKey, CertificateError>, certificates: &mut HashMap<String, ApiKey>| {
-            match result {
-                Ok(api_key) => {
-                    certificates.insert(String::from(application_id), api_key);
-                },
-                Err(err) => {
-                    error!("Error when fetching certificate for {}: {:?}", application_id, err);
+        test_msg.set_metadata("app_id", format!("{}", event.get_application_id()))?;
+        test_msg.set_metadata("api_key", format!("{}", event.get_api_key()))?;
 
-                    certificates.insert(String::from(application_id), ApiKey {
-                        key: None,
-                        timestamp: Utc::now().timestamp(),
-                    });
-                },
-            }
-        };
+        GLOG.log_message(test_msg);
 
-        if self.certificates.get(application_id).is_some() && self.is_expired(self.certificates.get(application_id).unwrap()) {
-            self.certificates.remove(application_id);
-            add_key(self.registry.fetch(application_id, fetch_key), &mut self.certificates);
-        } else if self.certificates.get(application_id).is_none() {
-            add_key(self.registry.fetch(application_id, fetch_key), &mut self.certificates);
-        }
-    }
-
-    fn is_expired(&self, key: &ApiKey) -> bool {
-        Utc::now().timestamp() - key.timestamp >= self.cache_ttl
-    }
-}
-
-impl AmqpConsumer for FcmConsumer {
-    fn handle_delivery(&mut self, channel: &mut Channel, deliver: basic::Deliver,
-                       _headers: basic::BasicProperties, body: Vec<u8>) {
-        if CALLBACKS_INFLIGHT.get() < 10000.0 {
-            channel.basic_ack(deliver.delivery_tag, false).unwrap();
-
-            if let Ok(event) = parse_from_bytes::<PushNotification>(&body) {
-                CALLBACKS_INFLIGHT.inc();
-
-                self.update_certificates(event.get_application_id());
-                let nx = self.notifier_tx.clone();
-
-                match self.certificates.get(event.get_application_id()) {
-                    Some(&ApiKey { key: Some(ref key), timestamp: _ }) =>
-                        nx.send((Some(key.to_string()), event)).wait().unwrap(),
-                    _ =>
-                        nx.send((None, event)).wait().unwrap(),
-                };
-            } else {
-                error!("Broken protobuf data");
-            }
-        } else {
-            error!("ERROR: Too many callbacks in-flight, requeuing");
-            park_timeout(Duration::from_millis(1000));
-            channel.basic_nack(deliver.delivery_tag, false, true).unwrap();
-        }
+        Ok(())
     }
 }

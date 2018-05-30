@@ -3,6 +3,7 @@ use a2::response::ErrorReason as ApnsReason;
 pub mod push_notification;
 pub mod apple_notification;
 pub mod apple_config;
+pub mod google_config;
 pub mod google_notification;
 pub mod webpush_notification;
 pub mod notification_result;

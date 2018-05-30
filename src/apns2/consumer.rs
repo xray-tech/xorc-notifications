@@ -1,7 +1,6 @@
 use rdkafka::{
     Message,
     config::ClientConfig,
-    message::BorrowedMessage,
     consumer::{Consumer, stream_consumer::StreamConsumer, CommitMode},
     topic_partition_list::{TopicPartitionList, Offset},
 };
@@ -20,15 +19,19 @@ use tokio_core::{
 };
 
 use std::{
-    sync::Arc,
     collections::HashMap,
-    time::SystemTime,
-    io,
 };
 
-use common::events::{
-    apple_config::*,
-    push_notification::PushNotification,
+use common::{
+    events::{
+        apple_config::*,
+        push_notification::PushNotification,
+    },
+    logger::{
+        LogAction
+    },
+    metrics::*,
+    kafka::OffsetCounter,
 };
 
 use gelf::{
@@ -42,82 +45,23 @@ use a2::{
 };
 
 use protobuf::{parse_from_bytes};
-use config::Config;
-use common::logger::{GelfLogger, LogAction};
 use notifier::Notifier;
 use producer::ApnsProducer;
-use common::metrics::*;
+
+use ::{GLOG, CONFIG};
 
 pub struct ApnsConsumer {
-    config: Arc<Config>,
-    logger: Arc<GelfLogger>,
     producer: ApnsProducer,
     notifiers: HashMap<String, Notifier>,
     partition: i32,
 }
 
-struct OffsetCounter<'a> {
-    consumer: &'a StreamConsumer,
-    counter: i32,
-    time: SystemTime,
-}
-
-impl<'a> OffsetCounter<'a> {
-    pub fn new(consumer: &'a StreamConsumer) -> OffsetCounter<'a> {
-        let counter = 0;
-        let time = SystemTime::now();
-
-        OffsetCounter {
-            consumer,
-            counter,
-            time,
-        }
-    }
-
-    pub fn try_store_offset(&mut self, msg: &BorrowedMessage) -> Result<(), io::Error> {
-        let should_commit = match self.time.elapsed() {
-            Ok(elapsed) if elapsed.as_secs() > 10 || self.counter >= 500 =>
-                true,
-            Err(_) => {
-                true
-            },
-            _ => false,
-        };
-
-        if should_commit {
-            self.store_offset(msg)
-        } else {
-            Err(io::Error::new(io::ErrorKind::Other, "No time to save the offset"))
-        }
-    }
-
-    pub fn store_offset(&mut self, msg: &BorrowedMessage) -> Result<(), io::Error> {
-        match self.consumer.store_offset(msg) {
-            Err(kafka_error) => {
-                error!(
-                    "Couldn't store offset: {:?}",
-                    kafka_error,
-                );
-                Err(io::Error::new(io::ErrorKind::Other, "Couldn't save offset"))
-            },
-            Ok(_) => {
-                self.counter = 0;
-                self.time = SystemTime::now();
-
-                Ok(())
-            }
-        }
-    }
-}
-
 impl ApnsConsumer {
-    pub fn new(config: Arc<Config>, logger: Arc<GelfLogger>, partition: i32) -> ApnsConsumer {
+    pub fn new(partition: i32) -> ApnsConsumer {
         let notifiers = HashMap::new();
-        let producer = ApnsProducer::new(config.clone(), logger.clone());
+        let producer = ApnsProducer::new();
 
         ApnsConsumer {
-            config,
-            logger,
             producer,
             notifiers,
             partition,
@@ -132,8 +76,8 @@ impl ApnsConsumer {
         let handle = core.handle();
 
         let consumer: StreamConsumer = ClientConfig::new()
-            .set("group.id", &self.config.kafka.group_id)
-            .set("bootstrap.servers", &self.config.kafka.brokers)
+            .set("group.id", &CONFIG.kafka.group_id)
+            .set("bootstrap.servers", &CONFIG.kafka.brokers)
             .set("enable.auto.commit", "false")
             .set("auto.offset.reset", "latest")
             .set("enable.partition.eof", "false")
@@ -141,8 +85,8 @@ impl ApnsConsumer {
             .expect("Consumer creation failed");
 
         let mut topic_map = HashMap::new();
-        topic_map.insert((self.config.kafka.config_topic.clone(), 1), Offset::Beginning);
-        topic_map.insert((self.config.kafka.input_topic.clone(), self.partition), Offset::Stored);
+        topic_map.insert((CONFIG.kafka.config_topic.clone(), 1), Offset::Beginning);
+        topic_map.insert((CONFIG.kafka.input_topic.clone(), self.partition), Offset::Stored);
 
         let partitions = TopicPartitionList::from_topic_map(&topic_map);
         consumer.assign(&partitions).expect("Can't subscribe to specified topics");
@@ -160,7 +104,7 @@ impl ApnsConsumer {
                 }
             }).for_each(|msg| {
                 match msg.topic() {
-                    t if t == self.config.kafka.input_topic => {
+                    t if t == CONFIG.kafka.input_topic => {
                         if let Err(e) = offset_counter.try_store_offset(&msg) {
                             warn!("Error storing offset: #{}", e);
                         }
@@ -179,10 +123,13 @@ impl ApnsConsumer {
                                         CALLBACKS_INFLIGHT.dec();
 
                                         match result {
-                                            Ok(response) => producer.handle_ok(event, response),
-                                            Err(Error::ResponseError(e)) => producer.handle_err(event, e),
-                                            Err(e) => producer.handle_fatal(event, e),
-                                        }
+                                            Ok(response) =>
+                                                producer.handle_ok(event, response),
+                                            Err(Error::ResponseError(e)) =>
+                                                producer.handle_err(event, e),
+                                            Err(e) =>
+                                                producer.handle_fatal(event, e),
+                                       }
                                     })
                                     .then(|_| ok(()));
 
@@ -194,7 +141,7 @@ impl ApnsConsumer {
                             error!("Error parsing protobuf");
                         }
                     },
-                    t if t == self.config.kafka.config_topic => {
+                    t if t == CONFIG.kafka.config_topic => {
                         if let Ok(mut event) = parse_from_bytes::<AppleConfig>(msg.payload().unwrap()) {
                             self.handle_config(&mut event);
                         } else {
@@ -209,7 +156,11 @@ impl ApnsConsumer {
                 Ok(())
             });
 
-        let _ = core.run(processed_stream.select2(control).then(|_| consumer.commit_consumer_state(CommitMode::Sync)));
+        let _ = core.run(
+            processed_stream
+                .select2(control)
+                .then(|_| consumer.commit_consumer_state(CommitMode::Sync))
+        );
 
         Ok(())
     }
@@ -298,7 +249,7 @@ impl ApnsConsumer {
             test_msg.set_metadata("action", format!("{:?}", LogAction::ConsumerDelete))?;
         }
 
-        self.logger.log_message(test_msg);
+        GLOG.log_message(test_msg);
 
         Ok(())
     }

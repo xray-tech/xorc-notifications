@@ -19,8 +19,6 @@ serde_derive = "1.0"
 time = "0.1"
 hyper = "0.11"
 http = "0.1"
-r2d2 = "0.8"
-r2d2_postgres = "0.14"
 prometheus = "0.4"
 lazy_static = "1.0"
 postgres-derive = "0.3"
@@ -28,6 +26,7 @@ heck = "0.3"
 futures = "0.1"
 serde_json = "1.0"
 tokio = "0.1"
+tokio-core = "0.1"
 tokio-signal = "0.1"
 tokio-timer = "0.1"
 rdkafka = "0.16"
@@ -35,11 +34,6 @@ chrono = "0.4"
 
 [build-dependencies]
 protoc-rust = "2.0"
-
-[dependencies.amqp]
-git = "https://github.com/pimeys/rust-amqp"
-branch = "consumer_clean_exit"
-default-features = false
 
 [dependencies.postgres]
 version = "0.15"

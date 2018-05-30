@@ -11,10 +11,10 @@ pub struct Config {
 }
 
 impl Config {
-    pub fn parse(path: String) -> Config {
+    pub fn parse(path: &str) -> Config {
         let mut config_toml = String::new();
 
-        let mut file = match File::open(&path) {
+        let mut file = match File::open(path) {
             Ok(file) => file,
             Err(err) => {
                 panic!("Error while reading config file: [{}]", err);
