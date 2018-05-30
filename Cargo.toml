@@ -1,8 +1,7 @@
 [package]
-name = "apns2"
+name = "xorc_notifications"
 version = "0.1.0"
 authors = ["Julius de Bruijn <julius.debruijn@360dialog.com>"]
-build = "build.rs"
 
 [dependencies]
 a2 = { git = "https://github.com/pimeys/a2" }
@@ -33,3 +32,7 @@ rdkafka = "0.16"
 
 [build-dependencies]
 protoc-rust = "2.0"
+
+[[bin]]
+name = "apns2"
+path = "src/apns2/main.rs"
