@@ -4,6 +4,8 @@ extern crate chan;
 extern crate serde_derive;
 #[macro_use]
 extern crate log;
+#[macro_use]
+extern crate lazy_static;
 
 extern crate serde;
 extern crate a2;
@@ -21,6 +23,7 @@ extern crate tokio_signal;
 extern crate tokio_timer;
 extern crate toml;
 extern crate common;
+extern crate chrono;
 
 mod notifier;
 mod consumer;
@@ -30,40 +33,45 @@ mod config;
 use common::{
     metrics::StatisticsServer,
     logger::GelfLogger,
+    kafka::PushConsumer,
 };
 
 use std::{
-    sync::Arc,
     thread,
     thread::JoinHandle,
+    env,
 };
-use chan_signal::{notify, Signal};
-use argparse::{ArgumentParser, Store};
-use config::Config;
+
 use futures::{
     sync::oneshot,
 };
-use consumer::ApnsConsumer;
+
+use consumer::ApnsHandler;
+use chan_signal::{notify, Signal};
+use config::Config;
+
+lazy_static! {
+    pub static ref CONFIG: Config =
+        match env::var("CONFIG") {
+            Ok(config_file_location) => {
+                Config::parse(&config_file_location)
+            },
+            _ => {
+                Config::parse("./config/fcm.toml")
+            }
+        };
+
+    pub static ref GLOG: GelfLogger =
+        GelfLogger::new(
+            &CONFIG.log.host,
+            "apns2"
+        ).unwrap();
+}
 
 fn main() {
-    let mut config_file_location = String::from("./config/config.toml");
     let exit_signal = notify(&[Signal::INT, Signal::TERM]);
     let (server_tx, server_rx) = oneshot::channel();
     let (consumer_tx, consumer_rx) = oneshot::channel();
-
-    {
-        let mut ap = ArgumentParser::new();
-        ap.set_description("Apple Push Notification System");
-        ap.refer(&mut config_file_location).add_option(
-            &["-c", "--config"],
-            Store,
-            "Config file (default: config.toml)",
-        );
-        ap.parse_args_or_exit();
-    }
-
-    let config = Arc::new(Config::parse(config_file_location));
-    let logger = Arc::new(GelfLogger::new(&config.log.host, "apns2").unwrap());
 
     info!("Apple Push Notification System starting up!");
 
@@ -72,8 +80,19 @@ fn main() {
     threads.push({
         thread::spawn(move || {
             debug!("Starting apns consumer...");
-            let mut consumer = ApnsConsumer::new(config.clone(), logger.clone(), 1);
-            consumer.consume(consumer_rx).unwrap();
+            let handler = ApnsHandler::new();
+
+            let mut consumer = PushConsumer::new(
+                handler,
+                &CONFIG.kafka,
+                1
+            );
+
+            if let Err(error) = consumer.consume(consumer_rx) {
+                error!("Error in consumer: {:?}", error);
+            }
+
+            debug!("Exiting apns consumer...");
         })
     });
 
@@ -81,6 +100,7 @@ fn main() {
         thread::spawn(move || {
             debug!("Starting statistics server...");
             StatisticsServer::handle(server_rx);
+            debug!("Exiting statistics server...");
         })
     });
 

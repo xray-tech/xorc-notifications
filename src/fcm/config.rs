@@ -6,7 +6,6 @@ use common::kafka;
 #[derive(Deserialize, Debug)]
 pub struct Config {
     pub kafka: kafka::Config,
-    pub general: GeneralConfig,
     pub log: LogConfig,
 }
 
@@ -29,9 +28,12 @@ impl Config {
 }
 
 #[derive(Deserialize, Debug)]
-pub struct GeneralConfig {
-    pub certificates: String,
-    pub application_whitelist: Option<Vec<i32>>,
+pub struct PostgresConfig {
+    pub uri: String,
+    pub pool_size: u32,
+    pub min_idle: u32,
+    pub idle_timeout: u64,
+    pub max_lifetime: u64,
 }
 
 #[derive(Deserialize, Debug)]

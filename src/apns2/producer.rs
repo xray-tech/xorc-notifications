@@ -3,10 +3,6 @@ use rdkafka::{
     producer::{FutureProducer, DeliveryFuture},
 };
 
-use std::{
-    sync::Arc,
-};
-
 use gelf::{
     Level as GelfLevel,
     Message as GelfMessage,
@@ -18,14 +14,8 @@ use a2::{
     error::Error,
 };
 
-use protobuf::{Message as ProtoMessage};
-use config::Config;
-
-use heck::SnakeCase;
-use time;
-
 use common::{
-    logger::{GelfLogger, LogAction},
+    logger::LogAction,
     metrics::*,
     events::{
         header::Header,
@@ -37,25 +27,25 @@ use common::{
     },
 };
 
+use protobuf::{Message as ProtoMessage};
+use heck::SnakeCase;
+use chrono::offset::Utc;
+
+use ::{GLOG, CONFIG};
+
 pub struct ApnsProducer {
-    config: Arc<Config>,
-    logger: Arc<GelfLogger>,
     producer: FutureProducer,
 }
 
 impl ApnsProducer {
-    pub fn new(config: Arc<Config>, logger: Arc<GelfLogger>) -> ApnsProducer {
+    pub fn new() -> ApnsProducer {
         let producer = ClientConfig::new()
-            .set("bootstrap.servers", &config.kafka.brokers)
+            .set("bootstrap.servers", &CONFIG.kafka.brokers)
             .set("produce.offset.report", "true")
             .create()
             .expect("Producer creation error");
 
-        ApnsProducer {
-            config,
-            logger,
-            producer,
-        }
+        ApnsProducer { producer }
     }
 
     fn get_retry_after(event: &PushNotification) -> u32 {
@@ -84,7 +74,7 @@ impl ApnsProducer {
 
         event.mut_apple().set_result(apns_result);
 
-        self.publish(event, &self.config.kafka.output_topic)
+        self.publish(event, &CONFIG.kafka.output_topic)
     }
 
     pub fn handle_err(&self, mut event: PushNotification, response: Response) -> DeliveryFuture {
@@ -125,16 +115,16 @@ impl ApnsProducer {
                 let ra = Self::get_retry_after(&event);
                 event.set_retry_after(ra);
 
-                &self.config.kafka.retry_topic
+                &CONFIG.kafka.retry_topic
             }
             _ => match apns_result.get_status() {
                 Timeout | Unknown | Forbidden => {
                     let ra = Self::get_retry_after(&event);
                     event.set_retry_after(ra);
 
-                    &self.config.kafka.retry_topic
+                    &CONFIG.kafka.retry_topic
                 }
-                _ => &self.config.kafka.output_topic,
+                _ => &CONFIG.kafka.output_topic,
             },
         };
 
@@ -163,17 +153,14 @@ impl ApnsProducer {
         let ra = Self::get_retry_after(&event);
         event.set_retry_after(ra);
 
-        self.publish(event, &self.config.kafka.retry_topic)
+        self.publish(event, &CONFIG.kafka.retry_topic)
     }
 
     fn publish(&self, event: PushNotification, topic: &str) -> DeliveryFuture {
         let response = event.get_apple().get_result();
-        let current_time = time::get_time();
         let mut header = Header::new();
 
-        header.set_created_at(
-            (current_time.sec as i64 * 1000) + (current_time.nsec as i64 / 1000 / 1000),
-        );
+        header.set_created_at(Utc::now().timestamp_millis());
         header.set_source(String::from("apns"));
         header.set_recipient_id(String::from("MISSING TODO TODO TODO"));
         header.set_field_type(String::from("notification.NotificationResult"));
@@ -267,7 +254,7 @@ impl ApnsProducer {
             }
         }
 
-        self.logger.log_message(test_msg);
+        GLOG.log_message(test_msg);
 
         Ok(())
     }
@@ -276,8 +263,6 @@ impl ApnsProducer {
 impl Clone for ApnsProducer {
     fn clone(&self) -> Self {
         ApnsProducer {
-            config: self.config.clone(),
-            logger: self.logger.clone(),
             producer: self.producer.clone(),
         }
     }
