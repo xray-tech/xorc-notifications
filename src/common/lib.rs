@@ -14,6 +14,7 @@ extern crate env_logger;
 extern crate hyper;
 extern crate futures;
 extern crate a2;
+extern crate web_push;
 extern crate rdkafka;
 extern crate tokio_core;
 

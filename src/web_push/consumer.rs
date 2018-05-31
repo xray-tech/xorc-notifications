@@ -1,197 +1,122 @@
-use std::sync::{Arc, Mutex};
-use std::sync::atomic::AtomicBool;
-use std::collections::HashMap;
-use std::thread::park_timeout;
-use time::precise_time_s;
-use std::time::Duration;
-use futures::{Sink, Future};
-use futures::sync::mpsc::Sender;
-use amqp::{Session, Channel, Table, Basic, Options, Consumer as AmqpConsumer};
-use amqp::protocol::basic;
-use protobuf::parse_from_bytes;
-use config::Config;
-use hyper::error::Error;
-use certificate_registry::{CertificateRegistry, CertificateError};
-use events::push_notification::PushNotification;
-use notifier::NotifierMessage;
-use metrics::CALLBACKS_INFLIGHT;
+use std::{
+    collections::HashMap,
+};
 
-pub struct Consumer {
-    channel: Mutex<Channel>,
-    session: Session,
-    config: Arc<Config>,
-    registry: Arc<CertificateRegistry>,
-}
+use common::{
+    metrics::*,
+    events::push_notification::PushNotification,
+    events::web_push_config::WebPushConfig,
+    kafka::EventHandler,
+};
+
+use futures::{
+    Future,
+    future::ok,
+};
+
+use notifier::Notifier;
+use protobuf::parse_from_bytes;
+use producer::ResponseProducer;
+use gelf;
+use ::{GLOG};
 
 struct ApiKey {
-    pub key: Result<Option<String>, CertificateError>,
-    pub timestamp: f64,
+    fcm_api_key: Option<String>
 }
 
-impl Drop for Consumer {
-    fn drop(&mut self) {
-        let mut channel = self.channel.lock()
-            .expect("Couldn't get the RabbitMQ channel mutex. RabbitMQ connection is not closed properly");
 
-        let _ = channel.close(200, "Bye!");
-        let _ = self.session.close(200, "Good bye!");
-    }
+pub struct WebPushHandler {
+    producer: ResponseProducer,
+    fcm_api_keys: HashMap<String, ApiKey>,
+    notifier: Notifier,
 }
 
-impl Consumer {
-    pub fn new(control: Arc<AtomicBool>,
-               config: Arc<Config>,
-               registry: Arc<CertificateRegistry>) -> Consumer {
-        let mut session = Session::new(Options {
-            vhost: config.rabbitmq.vhost.clone(),
-            host: config.rabbitmq.host.clone(),
-            port: config.rabbitmq.port,
-            login: config.rabbitmq.login.clone(),
-            password: config.rabbitmq.password.clone(), .. Default::default()
-        }, control.clone()).expect("Couldn't connect to RabbitMQ");
+impl WebPushHandler {
+    pub fn new() -> WebPushHandler {
+        let fcm_api_keys = HashMap::new();
+        let producer = ResponseProducer::new();
+        let notifier = Notifier::new();
 
-        let mut channel = session.open_channel(1).expect("Couldn't open a RabbitMQ channel");
-
-        channel.queue_declare(
-            &*config.rabbitmq.queue,
-            false, // passive
-            true,  // durable
-            false, // exclusive
-            false, // auto_delete
-            false, // nowait
-            Table::new()).expect("Couldn't declare a RabbitMQ queue");
-
-        channel.exchange_declare(
-            &*config.rabbitmq.exchange,
-            &*config.rabbitmq.exchange_type,
-            false, // passive
-            true,  // durable
-            false, // auto_delete
-            false, // internal
-            false, // nowait
-            Table::new()).expect("Couldn't declare a RabbitMQ exchange");
-
-        channel.queue_bind(
-            &*config.rabbitmq.queue,
-            &*config.rabbitmq.exchange,
-            &*config.rabbitmq.routing_key,
-            false, // nowait
-            Table::new()).expect("Couldn't bind a RabbitMQ queue to exchange");
-
-        Consumer {
-            channel: Mutex::new(channel),
-            session: session,
-            config: config,
-            registry: registry,
+        WebPushHandler {
+            producer,
+            fcm_api_keys,
+            notifier,
         }
     }
 
-    pub fn consume(&self, notifier_tx: Sender<NotifierMessage>) -> Result<(), Error> {
-        let mut channel = self.channel.lock().expect("Couldn't get the RabbitMQ channel mutex");
-        let consumer = WebPushConsumer::new(notifier_tx, self.registry.clone());
+    fn log_config_change(
+        &self,
+        title: &str,
+        event: &WebPushConfig,
+    ) -> Result<(), gelf::Error>
+    {
+        let mut test_msg = gelf::Message::new(String::from(title));
 
-        channel.basic_prefetch(100).ok().expect("failed to prefetch");
+        test_msg.set_metadata("app_id", format!("{}", event.get_application_id()))?;
+        test_msg.set_metadata("api_key", format!("{}", event.get_fcm_api_key()))?;
 
-        let consumer_name = channel.basic_consume(consumer,
-                                                  &*self.config.rabbitmq.queue,
-                                                  "webpush_consumer",
-                                                  true,  // no local
-                                                  false, // no ack
-                                                  false, // exclusive
-                                                  false, // nowait
-                                                  Table::new());
-
-        info!("Starting consumer {:?}", consumer_name);
-        channel.start_consuming();
+        GLOG.log_message(test_msg);
 
         Ok(())
     }
 }
 
-struct WebPushConsumer {
-    registry: Arc<CertificateRegistry>,
-    notifier_tx: Sender<NotifierMessage>,
-    certificates: HashMap<String, ApiKey>,
-    cache_ttl: f64,
-}
+impl EventHandler for WebPushHandler {
+    fn handle_notification(
+        &self,
+        event: PushNotification
+    ) -> Box<Future<Item=(), Error=()> + 'static + Send>
+    {
 
-impl WebPushConsumer {
-    pub fn new(notifier_tx: Sender<NotifierMessage>, registry: Arc<CertificateRegistry>) -> WebPushConsumer {
-        WebPushConsumer {
-            notifier_tx: notifier_tx,
-            certificates: HashMap::new(),
-            registry: registry,
-            cache_ttl: 120.0,
-        }
-    }
+        let producer = self.producer.clone();
 
-    fn update_certificates(&mut self, application_id: &str) {
-        let fetch_key = |api_key: Option<String>| {
-            ApiKey {
-                key: Ok(api_key),
-                timestamp: precise_time_s(),
-            }
-        };
-
-        let add_key = move |result: Result<ApiKey, CertificateError>, certificates: &mut HashMap<String, ApiKey>| {
-            match result {
-                Ok(api_key) => {
-                    certificates.insert(String::from(application_id), api_key);
-                },
-                Err(err) => {
-                    error!("Error when fetching certificate for {}: {:?}", application_id, err);
-
-                    certificates.insert(String::from(application_id), ApiKey {
-                        key: Err(err),
-                        timestamp: precise_time_s(),
-                    });
-                },
-            }
-        };
-
-        if self.certificates.get(application_id).is_some() && self.is_expired(self.certificates.get(application_id).unwrap()) {
-            self.certificates.remove(application_id);
-            add_key(self.registry.fetch(application_id, fetch_key), &mut self.certificates);
-        } else if self.certificates.get(application_id).is_none() {
-            add_key(self.registry.fetch(application_id, fetch_key), &mut self.certificates);
-        }
-    }
-
-    fn is_expired(&self, key: &ApiKey) -> bool {
-        precise_time_s() - key.timestamp >= self.cache_ttl
-    }
-}
-
-impl AmqpConsumer for WebPushConsumer {
-    fn handle_delivery(&mut self, channel: &mut Channel, deliver: basic::Deliver,
-                       _headers: basic::BasicProperties, body: Vec<u8>) {
-        if CALLBACKS_INFLIGHT.get() < 10000.0 {
-            channel.basic_ack(deliver.delivery_tag, false).unwrap();
-
-            if let Ok(event) = parse_from_bytes::<PushNotification>(&body) {
+        match self.fcm_api_keys.get(event.get_application_id()) {
+            Some(entity) => {
+                let timer = RESPONSE_TIMES_HISTOGRAM.start_timer();
                 CALLBACKS_INFLIGHT.inc();
 
-                self.update_certificates(event.get_application_id());
-                let nx = self.notifier_tx.clone();
+                let notification_send = self.notifier
+                    .notify(&event, entity.fcm_api_key.as_ref())
+                    .then(move |result| {
+                        timer.observe_duration();
+                        CALLBACKS_INFLIGHT.dec();
 
-                match self.certificates.get(event.get_application_id()) {
-                    Some(&ApiKey {key: Ok(Some(ref gcm_api_key)), timestamp: _ }) =>
-                        nx.send((Ok(Some(gcm_api_key.to_string())), event)).wait().unwrap(),
-                    Some(&ApiKey {key: Ok(None), timestamp: _ }) =>
-                        nx.send((Ok(None), event)).wait().unwrap(),
-                    Some(&ApiKey {key: Err(_), timestamp: _ }) =>
-                        nx.send((Err(()), event)).wait().unwrap(),
-                    None => {
-                        nx.send((Err(()), event)).wait().unwrap()
-                    }
-                };
+                        match result {
+                            Ok(()) =>
+                                producer.handle_ok(event),
+                            Err(error) =>
+                                producer.handle_error(event, error),
+                        }
+                    })
+                    .then(|_| ok(()));
+
+                Box::new(notification_send)
+            },
+            None => {
+                Box::new(self.producer.handle_no_cert(event).then(|_| ok(())))
+            }
+        }
+    }
+
+    fn handle_config(&mut self, payload: &[u8]) {
+        if let Ok(event) = parse_from_bytes::<WebPushConfig>(payload) {
+            let _ = self.log_config_change("Push config update", &event);
+
+            if event.has_fcm_api_key() {
+                self.fcm_api_keys.insert(
+                    String::from(event.get_application_id()),
+                    ApiKey { fcm_api_key: Some(event.get_fcm_api_key().to_string())},
+                );
+            } else if event.has_no_fcm_api_key() {
+                self.fcm_api_keys.insert(
+                    String::from(event.get_application_id()),
+                    ApiKey { fcm_api_key: None },
+                );
             } else {
-                error!("Broken protobuf data");
+                self.fcm_api_keys.remove(event.get_application_id());
             }
         } else {
-            error!("ERROR: Too many callbacks in-flight, requeuing");
-            park_timeout(Duration::from_millis(1000));
-            channel.basic_nack(deliver.delivery_tag, false, true).unwrap();
+            error!("Error parsing protobuf");
         }
     }
 }

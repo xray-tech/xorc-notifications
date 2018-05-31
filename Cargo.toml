@@ -31,6 +31,8 @@ tokio-signal = "0.1"
 tokio-timer = "0.1"
 rdkafka = "0.16"
 chrono = "0.4"
+base64 = "0.6"
+web-push = { git = "https://github.com/pimeys/rust-web-push" }
 
 [build-dependencies]
 protoc-rust = "2.0"
@@ -51,3 +53,7 @@ path = "src/apns2/main.rs"
 [[bin]]
 name = "fcm"
 path = "src/fcm/main.rs"
+
+[[bin]]
+name = "web_push"
+path = "src/web_push/main.rs"

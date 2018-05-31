@@ -1,98 +1,74 @@
-use std::sync::Arc;
-use web_push::WebPushError;
-use amqp::{Session, Channel, Table, Basic, Options};
-use amqp::protocol::basic::BasicProperties;
-use events::push_notification::PushNotification;
-use events::webpush_notification::WebPushResult;
-use events::notification_result::{NotificationResult, NotificationResult_Error};
-use events::header::Header;
-use config::Config;
-use futures::sync::mpsc::Receiver;
-use futures::Stream;
-use protobuf::core::Message;
-use std::sync::atomic::AtomicBool;
-use metrics::{CALLBACKS_COUNTER, CALLBACKS_INFLIGHT};
-use notifier::ProducerMessage;
-use logger::GelfLogger;
-use time;
+use rdkafka::{
+    config::ClientConfig,
+    producer::{FutureProducer, DeliveryFuture},
+};
+
+use common::{
+    events::{
+        push_notification::PushNotification,
+        notification_result::{NotificationResult, NotificationResult_Error},
+        webpush_notification::WebPushResult,
+        header::Header,
+    },
+    metrics::{
+        CALLBACKS_COUNTER,
+    },
+};
+
+use gelf::{
+    Message as GelfMessage,
+    Error as GelfError,
+    Level as GelfLevel
+};
+
+use ::{
+    GLOG,
+    CONFIG,
+};
+
+use web_push::*;
+use chrono::Utc;
+use protobuf::Message;
+use hyper::Uri;
 
 pub struct ResponseProducer {
-    channel: Channel,
-    session: Session,
-    config: Arc<Config>,
-    logger: Arc<GelfLogger>,
-}
-
-impl Drop for ResponseProducer {
-    fn drop(&mut self) {
-        let _ = self.channel.close(200, "Bye!");
-        let _ = self.session.close(200, "Good bye!");
-    }
+    producer: FutureProducer,
 }
 
 impl ResponseProducer {
-    pub fn new(config: Arc<Config>, control: Arc<AtomicBool>, logger: Arc<GelfLogger>) -> ResponseProducer {
-        let options = Options {
-            vhost: config.rabbitmq.vhost.clone(),
-            host: config.rabbitmq.host.clone(),
-            port: config.rabbitmq.port,
-            login: config.rabbitmq.login.clone(),
-            password: config.rabbitmq.password.clone(), .. Default::default()
-        };
-
-        let mut session = Session::new(options, control.clone()).expect("Couldn't connect to RabbitMQ");
-        let mut channel = session.open_channel(1).expect("Couldn't open a RabbitMQ channel");
-
-        channel.exchange_declare(
-            &*config.rabbitmq.response_exchange,
-            &*config.rabbitmq.response_exchange_type,
-            false, // passive
-            true,  // durable
-            false, // auto_delete
-            false, // internal
-            false, // nowait
-            Table::new()).expect("Couldn't declare a RabbitMQ exchange");
+    pub fn new() -> ResponseProducer {
+        let producer = ClientConfig::new()
+            .set("bootstrap.servers", &CONFIG.kafka.brokers)
+            .set("produce.offset.report", "true")
+            .create()
+            .expect("Producer creation error");
 
         ResponseProducer {
-            channel: channel,
-            session: session,
-            config: config.clone(),
-            logger: logger,
+            producer,
         }
     }
 
-    pub fn run(&mut self, rx: Receiver<ProducerMessage>) {
-        let mut iterator = rx.wait();
-
-        while let Some(item) = iterator.next() {
-            CALLBACKS_INFLIGHT.dec();
-
-            match item {
-                Ok((event, Some(Ok(())))) =>
-                    self.handle_ok(event),
-                Ok((event, Some(Err(error)))) =>
-                    self.handle_error(event, error),
-                Ok((event, None)) =>
-                    self.handle_no_cert(event),
-                Err(e) =>
-                    error!("This should not happen! {:?}", e),
-            }
-        }
-    }
-
-    fn handle_ok(&mut self, mut event: PushNotification) {
+    pub fn handle_ok(
+        &self,
+        mut event: PushNotification
+    ) -> DeliveryFuture
+    {
         CALLBACKS_COUNTER.with_label_values(&["success"]).inc();
 
-        let _ = self.logger.log_push_result("Successfully sent a push notification", &event, None);
+        let _ = self.log_push_result("Successfully sent a push notification", &event, None);
         let mut web_result = WebPushResult::new();
 
         web_result.set_successful(true);
         event.mut_web().set_response(web_result);
 
-        self.publish(event, "no_retry");
+        self.publish(event, "no_retry")
     }
 
-    fn handle_no_cert(&mut self, mut event: PushNotification) {
+    pub fn handle_no_cert(
+        &self,
+        mut event: PushNotification,
+    ) -> DeliveryFuture
+    {
         error!("Certificate missing for event: '{:?}'", event);
         CALLBACKS_COUNTER.with_label_values(&["certificate_missing"]).inc();
 
@@ -101,11 +77,16 @@ impl ResponseProducer {
         web_result.set_successful(false);
         event.mut_web().set_response(web_result);
 
-        self.publish(event, "no_retry");
+        self.publish(event, "no_retry")
     }
 
-    fn handle_error(&mut self, mut event: PushNotification, error: WebPushError) {
-        let _ = self.logger.log_push_result("Error sending a push notification", &event, Some(&error));
+    pub fn handle_error(
+        &self,
+        mut event: PushNotification,
+        error: WebPushError,
+    ) -> DeliveryFuture
+    {
+        let _ = self.log_push_result("Error sending a push notification", &event, Some(&error));
 
         let mut web_result = WebPushResult::new();
 
@@ -127,75 +108,65 @@ impl ResponseProducer {
                     }
                 }
 
-                self.publish(event, "retry");
+                self.publish(event, "retry")
             },
             WebPushError::TimeoutError => {
                 let duration = Self::calculate_retry_duration(&event);
 
                 event.set_retry_after(duration);
 
-                self.publish(event, "retry");
+                self.publish(event, "retry")
             },
             _ => {
-                self.publish(event, "no_retry");
+                self.publish(event, "no_retry")
             },
-        };
+        }
     }
 
-    fn can_reply(event: &PushNotification, routing_key: &str) -> bool {
-        event.has_exchange() && routing_key == "no_retry" && event.has_response_recipient_id()
-    }
+    fn publish(
+        &self,
+        event: PushNotification,
+        routing_key: &str,
+    ) -> DeliveryFuture
+    {
+        let response_routing_key = event.get_response_recipient_id();
+        let response = event.get_web().get_response();
+        let mut header = Header::new();
 
-    fn publish(&mut self, event: PushNotification, routing_key: &str) {
-        if Self::can_reply(&event, routing_key) {
-            let response_routing_key = event.get_response_recipient_id();
-            let response = event.get_web().get_response();
-            let current_time         = time::get_time();
-            let mut header           = Header::new();
+        header.set_created_at(Utc::now().timestamp_millis());
+        header.set_source(String::from("webpush"));
+        header.set_recipient_id(String::from(response_routing_key));
+        header.set_field_type(String::from("notification.NotificationResult"));
 
-            header.set_created_at((current_time.sec as i64 * 1000) +
-                                  (current_time.nsec as i64 / 1000 / 1000));
-            header.set_source(String::from("webpush"));
-            header.set_recipient_id(String::from(response_routing_key));
-            header.set_field_type(String::from("notification.NotificationResult"));
+        let mut result_event = NotificationResult::new();
+        result_event.set_header(header);
+        result_event.set_universe(String::from(event.get_universe()));
+        result_event.set_correlation_id(String::from(event.get_correlation_id()));
 
-            let mut result_event = NotificationResult::new();
-            result_event.set_header(header);
-            result_event.set_universe(String::from(event.get_universe()));
-            result_event.set_correlation_id(String::from(event.get_correlation_id()));
+        if response.has_error() {
+            result_event.set_successful(false);
+            result_event.set_error((&response.get_error()).into());
 
-            if response.has_error() {
-                result_event.set_successful(false);
-                result_event.set_error((&response.get_error()).into());
-
-                if let NotificationResult_Error::Unsubscribed = result_event.get_error() {
-                    result_event.set_delete_user(true);
-                } else {
-                    result_event.set_delete_user(false);
-                }
-
-                result_event.set_reason(format!("{:?}", response.get_error()));
+            if let NotificationResult_Error::Unsubscribed = result_event.get_error() {
+                result_event.set_delete_user(true);
             } else {
                 result_event.set_delete_user(false);
-                result_event.set_successful(true);
             }
 
-            self.channel.basic_publish(
-                event.get_exchange(),
-                response_routing_key,
-                false,   // mandatory
-                false,   // immediate
-                BasicProperties { ..Default::default() },
-                result_event.write_to_bytes().expect("Couldn't serialize a protobuf event")).expect("Couldn't publish to RabbitMQ");
+            result_event.set_reason(format!("{:?}", response.get_error()));
+        } else {
+            result_event.set_delete_user(false);
+            result_event.set_successful(true);
         }
 
-        self.channel.basic_publish(
-            &*self.config.rabbitmq.response_exchange,
+        self.producer.send_copy::<Vec<u8>, ()>(
             routing_key,
-            false,   // mandatory
-            false,   // immediate
-            BasicProperties { ..Default::default() },
-            event.write_to_bytes().expect("Couldn't serialize a protobuf event")).expect("Couldn't publish to RabbitMQ");
+            None,
+            Some(&result_event.write_to_bytes().unwrap()),
+            None,
+            None,
+            1000
+        )
     }
 
     fn calculate_retry_duration(event: &PushNotification) -> u32 {
@@ -204,6 +175,51 @@ impl ResponseProducer {
             base.pow(event.get_retry_count())
         } else {
             1
+        }
+    }
+
+    fn log_push_result(&self, title: &str, event: &PushNotification, error: Option<&WebPushError>) -> Result<(), GelfError> {
+        let mut test_msg = GelfMessage::new(String::from(title));
+
+        test_msg.set_full_message(format!("{:?}", event)).
+            set_level(GelfLevel::Informational).
+            set_metadata("correlation_id", format!("{}", event.get_correlation_id()))?.
+            set_metadata("device_token",   format!("{}", event.get_device_token()))?.
+            set_metadata("app_id",         format!("{}", event.get_application_id()))?.
+            set_metadata("campaign_id",    format!("{}", event.get_campaign_id()))?.
+            set_metadata("event_source",   String::from(event.get_header().get_source()))?;
+
+        if let Ok(uri) = event.get_device_token().parse::<Uri>() {
+            if let Some(host) = uri.host() {
+                test_msg.set_metadata("push_service", String::from(host))?;
+            };
+        };
+
+        match error {
+            Some(&WebPushError::BadRequest(Some(ref error_info))) => {
+                test_msg.set_metadata("successful", String::from("false"))?;
+                test_msg.set_metadata("error", String::from("BadRequest"))?;
+                test_msg.set_metadata("long_error", format!("{}", error_info))?;
+            }
+            Some(error_msg) => {
+                test_msg.set_metadata("successful", String::from("false"))?;
+                test_msg.set_metadata("error", format!("{:?}", error_msg))?;
+            },
+            _ => {
+                test_msg.set_metadata("successful", String::from("true"))?;
+            }
+        }
+
+        GLOG.log_message(test_msg);
+
+        Ok(())
+    }
+}
+
+impl Clone for ResponseProducer {
+    fn clone(&self) -> Self {
+        Self {
+            producer: self.producer.clone(),
         }
     }
 }
