@@ -10,6 +10,7 @@ extern crate serde_derive;
 extern crate serde;
 extern crate protobuf;
 extern crate gelf;
+extern crate chrono;
 extern crate env_logger;
 extern crate hyper;
 extern crate futures;

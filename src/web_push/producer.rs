@@ -1,18 +1,13 @@
-use rdkafka::{
-    config::ClientConfig,
-    producer::{FutureProducer, DeliveryFuture},
-};
-
 use common::{
     events::{
         push_notification::PushNotification,
-        notification_result::{NotificationResult, NotificationResult_Error},
         webpush_notification::WebPushResult,
-        header::Header,
+        ResponseAction,
     },
     metrics::{
         CALLBACKS_COUNTER,
     },
+    kafka::ResponseProducer,
 };
 
 use gelf::{
@@ -27,24 +22,17 @@ use ::{
 };
 
 use web_push::*;
-use chrono::Utc;
-use protobuf::Message;
 use hyper::Uri;
+use rdkafka::producer::DeliveryFuture;
 
-pub struct ResponseProducer {
-    producer: FutureProducer,
+pub struct WebPushProducer {
+    producer: ResponseProducer,
 }
 
-impl ResponseProducer {
-    pub fn new() -> ResponseProducer {
-        let producer = ClientConfig::new()
-            .set("bootstrap.servers", &CONFIG.kafka.brokers)
-            .set("produce.offset.report", "true")
-            .create()
-            .expect("Producer creation error");
-
-        ResponseProducer {
-            producer,
+impl WebPushProducer {
+    pub fn new() -> WebPushProducer {
+        WebPushProducer {
+            producer: ResponseProducer::new(&CONFIG.kafka),
         }
     }
 
@@ -61,7 +49,7 @@ impl ResponseProducer {
         web_result.set_successful(true);
         event.mut_web().set_response(web_result);
 
-        self.publish(event, "no_retry")
+        self.producer.publish(event, ResponseAction::None)
     }
 
     pub fn handle_no_cert(
@@ -77,7 +65,7 @@ impl ResponseProducer {
         web_result.set_successful(false);
         event.mut_web().set_response(web_result);
 
-        self.publish(event, "no_retry")
+        self.producer.publish(event, ResponseAction::Retry)
     }
 
     pub fn handle_error(
@@ -97,88 +85,31 @@ impl ResponseProducer {
 
         CALLBACKS_COUNTER.with_label_values(&[error.short_description()]).inc();
 
-        match error {
-            WebPushError::ServerError(retry_after) => {
-                match retry_after {
-                    Some(duration) =>
-                        event.set_retry_after(duration.as_secs() as u32),
-                    None => {
-                        let duration = Self::calculate_retry_duration(&event);
-                        event.set_retry_after(duration)
-                    }
-                }
-
-                self.publish(event, "retry")
+        let response_action = match error {
+            WebPushError::ServerError(_) => {
+                ResponseAction::Retry
             },
             WebPushError::TimeoutError => {
-                let duration = Self::calculate_retry_duration(&event);
-
-                event.set_retry_after(duration);
-
-                self.publish(event, "retry")
+                ResponseAction::Retry
             },
-            _ => {
-                self.publish(event, "no_retry")
-            },
-        }
-    }
-
-    fn publish(
-        &self,
-        event: PushNotification,
-        routing_key: &str,
-    ) -> DeliveryFuture
-    {
-        let response_routing_key = event.get_response_recipient_id();
-        let response = event.get_web().get_response();
-        let mut header = Header::new();
-
-        header.set_created_at(Utc::now().timestamp_millis());
-        header.set_source(String::from("webpush"));
-        header.set_recipient_id(String::from(response_routing_key));
-        header.set_field_type(String::from("notification.NotificationResult"));
-
-        let mut result_event = NotificationResult::new();
-        result_event.set_header(header);
-        result_event.set_universe(String::from(event.get_universe()));
-        result_event.set_correlation_id(String::from(event.get_correlation_id()));
-
-        if response.has_error() {
-            result_event.set_successful(false);
-            result_event.set_error((&response.get_error()).into());
-
-            if let NotificationResult_Error::Unsubscribed = result_event.get_error() {
-                result_event.set_delete_user(true);
-            } else {
-                result_event.set_delete_user(false);
+            WebPushError::EndpointNotValid | WebPushError::EndpointNotFound => {
+                ResponseAction::UnsubscribeEntity
             }
+            _ => {
+                ResponseAction::None
+            },
+        };
 
-            result_event.set_reason(format!("{:?}", response.get_error()));
-        } else {
-            result_event.set_delete_user(false);
-            result_event.set_successful(true);
-        }
-
-        self.producer.send_copy::<Vec<u8>, ()>(
-            routing_key,
-            None,
-            Some(&result_event.write_to_bytes().unwrap()),
-            None,
-            None,
-            1000
-        )
+        self.producer.publish(event, response_action)
     }
 
-    fn calculate_retry_duration(event: &PushNotification) -> u32 {
-        if event.has_retry_count() {
-            let base: u32 = 2;
-            base.pow(event.get_retry_count())
-        } else {
-            1
-        }
-    }
-
-    fn log_push_result(&self, title: &str, event: &PushNotification, error: Option<&WebPushError>) -> Result<(), GelfError> {
+    fn log_push_result(
+        &self,
+        title: &str,
+        event: &PushNotification,
+        error: Option<&WebPushError>
+    ) -> Result<(), GelfError>
+    {
         let mut test_msg = GelfMessage::new(String::from(title));
 
         test_msg.set_full_message(format!("{:?}", event)).
@@ -216,7 +147,7 @@ impl ResponseProducer {
     }
 }
 
-impl Clone for ResponseProducer {
+impl Clone for WebPushProducer {
     fn clone(&self) -> Self {
         Self {
             producer: self.producer.clone(),

@@ -1,19 +1,14 @@
-use rdkafka::{
-    config::ClientConfig,
-    producer::{FutureProducer, DeliveryFuture},
-};
-
 use common::{
     events::{
         push_notification::PushNotification,
-        notification_result::{NotificationResult, NotificationResult_Error},
         google_notification::FcmResult,
         google_notification::FcmResult_Status::*,
-        header::Header,
+        ResponseAction,
     },
     metrics::{
         CALLBACKS_COUNTER,
     },
+    kafka::ResponseProducer,
 };
 
 
@@ -31,33 +26,15 @@ use gelf::{
 };
 
 use ::{GLOG, CONFIG};
-
-use chrono::Utc;
-use protobuf::Message;
-
+use rdkafka::producer::DeliveryFuture;
 pub struct FcmProducer {
-    producer: FutureProducer,
+    producer: ResponseProducer,
 }
 
 impl FcmProducer {
     pub fn new() -> FcmProducer {
-        let producer = ClientConfig::new()
-            .set("bootstrap.servers", &CONFIG.kafka.brokers)
-            .set("produce.offset.report", "true")
-            .create()
-            .expect("Producer creation error");
-
         FcmProducer {
-            producer,
-        }
-    }
-
-    fn get_retry_after(event: &PushNotification) -> u32 {
-        if event.has_retry_count() {
-            let base: u32 = 2;
-            base.pow(event.get_retry_count())
-        } else {
-            1
+            producer: ResponseProducer::new(&CONFIG.kafka),
         }
     }
 
@@ -80,7 +57,7 @@ impl FcmProducer {
 
         event.mut_google().set_response(fcm_result);
 
-        self.publish(event, "no_retry")
+        self.producer.publish(event, ResponseAction::Retry)
     }
 
     pub fn handle_error(
@@ -95,32 +72,31 @@ impl FcmProducer {
         let mut fcm_result = FcmResult::new();
         fcm_result.set_successful(false);
 
-        let routing_key = match error {
+        let response_action = match error {
             FcmError::ServerError(_) => {
                 fcm_result.set_status(ServerError);
                 CALLBACKS_COUNTER.with_label_values(&["server_error"]).inc();
 
-                let retry_after = Self::get_retry_after(&event);
-                event.set_retry_after(retry_after);
-
-                "retry"
+                ResponseAction::Retry
             },
             FcmError::Unauthorized             => {
                 fcm_result.set_status(Unauthorized);
                 CALLBACKS_COUNTER.with_label_values(&["unauthorized"]).inc();
-                "no_retry"
+
+                ResponseAction::UnsubscribeEntity
             },
             FcmError::InvalidMessage(error)    => {
                 fcm_result.set_status(InvalidMessage);
                 CALLBACKS_COUNTER.with_label_values(&["invalid_message"]).inc();
                 fcm_result.set_error(error);
-                "no_retry"
+
+                ResponseAction::None
             },
         };
 
         event.mut_google().set_response(fcm_result);
 
-        self.publish(event, routing_key)
+        self.producer.publish(event, response_action)
     }
 
     pub fn handle_response(
@@ -198,56 +174,16 @@ impl FcmProducer {
             }
         }
 
+        let response_action = match fcm_result.get_status() {
+            NotRegistered =>
+                ResponseAction::UnsubscribeEntity,
+            _ =>
+                ResponseAction::None,
+        };
+
         event.mut_google().set_response(fcm_result);
 
-        self.publish(event, "no_retry")
-    }
-
-    fn publish(
-        &self,
-        event: PushNotification,
-        topic: &str
-    ) -> DeliveryFuture
-    {
-        let response             = event.get_google().get_response();
-        let mut header           = Header::new();
-
-        header.set_created_at(Utc::now().timestamp_millis());
-        header.set_source(String::from("fcm"));
-        header.set_recipient_id(String::from("MISSING TODO TODO TODO"));
-        header.set_field_type(String::from("notification.NotificationResult"));
-
-        let mut result_event = NotificationResult::new();
-        result_event.set_header(header);
-        result_event.set_universe(String::from(event.get_universe()));
-        result_event.set_correlation_id(String::from(event.get_correlation_id()));
-
-        match response.get_status() {
-            Success => {
-                result_event.set_delete_user(false);
-                result_event.set_successful(true);
-            },
-            NotRegistered => {
-                result_event.set_delete_user(true);
-                result_event.set_successful(false);
-                result_event.set_error(NotificationResult_Error::Unsubscribed);
-            },
-            _ => {
-                result_event.set_delete_user(false);
-                result_event.set_successful(false);
-                result_event.set_reason(format!("{:?}", response.get_status()));
-                result_event.set_error(NotificationResult_Error::Other);
-            },
-        }
-
-        self.producer.send_copy::<Vec<u8>, ()>(
-            topic,
-            None,
-            Some(&result_event.write_to_bytes().unwrap()),
-            None,
-            None,
-            1000
-        )
+        self.producer.publish(event, response_action)
     }
 
     fn log_result(&self, title: &str, event: &PushNotification, error: Option<&str>) -> Result<(), GelfError> {

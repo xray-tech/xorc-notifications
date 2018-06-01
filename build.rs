@@ -6,14 +6,17 @@ fn main() {
         input: &[
             "third_party/events/schema/common/header.proto",
             "third_party/events/schema/common/map_field_entry.proto",
+
             "third_party/events/schema/notification/apple_config.proto",
             "third_party/events/schema/notification/google_config.proto",
             "third_party/events/schema/notification/web_push_config.proto",
+
             "third_party/events/schema/notification/push_notification.proto",
             "third_party/events/schema/notification/apple_notification.proto",
             "third_party/events/schema/notification/google_notification.proto",
-            "third_party/events/schema/notification/notification_result.proto",
             "third_party/events/schema/notification/webpush_notification.proto",
+
+            "third_party/events/schema/notification/push_result.proto",
         ],
         includes: &["third_party/events/schema/"],
         customize: protoc_rust::Customize {

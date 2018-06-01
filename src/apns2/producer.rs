@@ -1,8 +1,3 @@
-use rdkafka::{
-    config::ClientConfig,
-    producer::{FutureProducer, DeliveryFuture},
-};
-
 use gelf::{
     Level as GelfLevel,
     Message as GelfMessage,
@@ -18,42 +13,27 @@ use common::{
     logger::LogAction,
     metrics::*,
     events::{
-        header::Header,
         apple_notification::*,
-        notification_result::{NotificationResult, NotificationResult_Error},
         apple_notification::ApnsResult_Reason::*,
         apple_notification::ApnsResult_Status::*,
         push_notification::PushNotification,
+        ResponseAction,
     },
+    kafka::ResponseProducer,
 };
 
-use protobuf::{Message as ProtoMessage};
+use rdkafka::producer::DeliveryFuture;
 use heck::SnakeCase;
-use chrono::offset::Utc;
-
 use ::{GLOG, CONFIG};
 
 pub struct ApnsProducer {
-    producer: FutureProducer,
+    producer: ResponseProducer,
 }
 
 impl ApnsProducer {
     pub fn new() -> ApnsProducer {
-        let producer = ClientConfig::new()
-            .set("bootstrap.servers", &CONFIG.kafka.brokers)
-            .set("produce.offset.report", "true")
-            .create()
-            .expect("Producer creation error");
-
-        ApnsProducer { producer }
-    }
-
-    fn get_retry_after(event: &PushNotification) -> u32 {
-        if event.has_retry_count() {
-            let base: u32 = 2;
-            base.pow(event.get_retry_count())
-        } else {
-            1
+        ApnsProducer {
+            producer: ResponseProducer::new(&CONFIG.kafka),
         }
     }
 
@@ -74,7 +54,7 @@ impl ApnsProducer {
 
         event.mut_apple().set_result(apns_result);
 
-        self.publish(event, &CONFIG.kafka.output_topic)
+        self.producer.publish(event, ResponseAction::None)
     }
 
     pub fn handle_err(&self, mut event: PushNotification, response: Response) -> DeliveryFuture {
@@ -110,26 +90,21 @@ impl ApnsProducer {
             }
         }
 
-        let topic = match apns_result.get_reason() {
-            InternalServerError | Shutdown | ServiceUnavailable | ExpiredProviderToken => {
-                let ra = Self::get_retry_after(&event);
-                event.set_retry_after(ra);
-
-                &CONFIG.kafka.retry_topic
-            }
+        let response_action = match apns_result.get_reason() {
+            InternalServerError | Shutdown | ServiceUnavailable | ExpiredProviderToken =>
+                ResponseAction::Retry,
+            DeviceTokenNotForTopic | BadDeviceToken =>
+                ResponseAction::UnsubscribeEntity,
             _ => match apns_result.get_status() {
-                Timeout | Unknown | Forbidden => {
-                    let ra = Self::get_retry_after(&event);
-                    event.set_retry_after(ra);
-
-                    &CONFIG.kafka.retry_topic
-                }
-                _ => &CONFIG.kafka.output_topic,
+                Timeout | Unknown | Forbidden =>
+                    ResponseAction::Retry,
+                _ =>
+                    ResponseAction::None,
             },
         };
 
         event.mut_apple().set_result(apns_result);
-        self.publish(event, topic)
+        self.producer.publish(event, response_action)
     }
 
     pub fn handle_fatal(&self, mut event: PushNotification, error: Error) -> DeliveryFuture {
@@ -150,62 +125,7 @@ impl ApnsProducer {
 
         event.mut_apple().set_result(apns_result);
 
-        let ra = Self::get_retry_after(&event);
-        event.set_retry_after(ra);
-
-        self.publish(event, &CONFIG.kafka.retry_topic)
-    }
-
-    fn publish(&self, event: PushNotification, topic: &str) -> DeliveryFuture {
-        let response = event.get_apple().get_result();
-        let mut header = Header::new();
-
-        header.set_created_at(Utc::now().timestamp_millis());
-        header.set_source(String::from("apns"));
-        header.set_recipient_id(String::from("MISSING TODO TODO TODO"));
-        header.set_field_type(String::from("notification.NotificationResult"));
-
-        let mut result_event = NotificationResult::new();
-        result_event.set_header(header);
-        result_event.set_universe(String::from(event.get_universe()));
-        result_event.set_correlation_id(String::from(event.get_correlation_id()));
-
-        match response.get_status() {
-            Success => {
-                result_event.set_delete_user(false);
-                result_event.set_successful(true);
-            }
-            Unregistered => {
-                result_event.set_delete_user(true);
-                result_event.set_successful(false);
-                result_event.set_error(NotificationResult_Error::Unsubscribed);
-            }
-            _ => {
-                match response.get_reason() {
-                    DeviceTokenNotForTopic | BadDeviceToken => {
-                        result_event.set_delete_user(true);
-                        result_event.set_successful(false);
-                        result_event.set_reason(format!("{:?}", response.get_reason()));
-                        result_event.set_error(NotificationResult_Error::Unsubscribed);
-                    },
-                    _ => {
-                        result_event.set_delete_user(false);
-                        result_event.set_successful(false);
-                        result_event.set_reason(format!("{:?}", response.get_status()));
-                        result_event.set_error(NotificationResult_Error::Other);
-                    }
-                }
-            }
-        }
-
-        self.producer.send_copy::<Vec<u8>, ()>(
-            topic,
-            None,
-            Some(&result_event.write_to_bytes().unwrap()),
-            None,
-            None,
-            1000
-        )
+        self.producer.publish(event, ResponseAction::Retry)
     }
 
     fn log_result(
@@ -263,7 +183,7 @@ impl ApnsProducer {
 impl Clone for ApnsProducer {
     fn clone(&self) -> Self {
         ApnsProducer {
-            producer: self.producer.clone(),
+            producer: self.producer.clone()
         }
     }
 }

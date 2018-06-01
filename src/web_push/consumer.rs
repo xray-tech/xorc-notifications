@@ -16,7 +16,7 @@ use futures::{
 
 use notifier::Notifier;
 use protobuf::parse_from_bytes;
-use producer::ResponseProducer;
+use producer::WebPushProducer;
 use gelf;
 use ::{GLOG};
 
@@ -26,7 +26,7 @@ struct ApiKey {
 
 
 pub struct WebPushHandler {
-    producer: ResponseProducer,
+    producer: WebPushProducer,
     fcm_api_keys: HashMap<String, ApiKey>,
     notifier: Notifier,
 }
@@ -34,7 +34,7 @@ pub struct WebPushHandler {
 impl WebPushHandler {
     pub fn new() -> WebPushHandler {
         let fcm_api_keys = HashMap::new();
-        let producer = ResponseProducer::new();
+        let producer = WebPushProducer::new();
         let notifier = Notifier::new();
 
         WebPushHandler {

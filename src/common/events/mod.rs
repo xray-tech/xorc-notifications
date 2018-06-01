@@ -3,7 +3,6 @@ use web_push::WebPushError;
 
 use self::{
     webpush_notification::WebPushResult_Error,
-    notification_result::NotificationResult_Error,
     apple_notification::{
         ApnsResult_Reason,
         ApnsResult_Reason::*,
@@ -19,10 +18,9 @@ pub mod google_config;
 pub mod google_notification;
 pub mod webpush_notification;
 pub mod web_push_config;
-pub mod notification_result;
+pub mod push_result;
 pub mod map_field_entry;
 pub mod header;
-
 
 impl From<u16> for ApnsResult_Status {
     fn from(status: u16) -> ApnsResult_Status {
@@ -94,12 +92,8 @@ impl<'a> From<&'a WebPushError> for WebPushResult_Error {
     }
 }
 
-impl<'a> From<&'a WebPushResult_Error> for NotificationResult_Error {
-    fn from(e: &'a WebPushResult_Error) -> NotificationResult_Error {
-        match *e {
-            WebPushResult_Error::EndpointNotFound => NotificationResult_Error::Unsubscribed,
-            WebPushResult_Error::EndpointNotValid => NotificationResult_Error::Unsubscribed,
-            _ => NotificationResult_Error::Other,
-        }
-    }
+pub enum ResponseAction {
+    None,
+    UnsubscribeEntity,
+    Retry
 }
