@@ -124,7 +124,7 @@ impl EventHandler for ApnsHandler {
     }
 
     fn handle_config(&mut self, payload: &[u8]) {
-        if let Ok(mut event) = parse_from_bytes::<AppleConfig>(payload) {
+        if let Ok(event) = parse_from_bytes::<AppleConfig>(payload) {
             let _ = self.log_config_change("Push config update", &event);
             let application_id = String::from(event.get_application_id());
 
@@ -133,18 +133,16 @@ impl EventHandler for ApnsHandler {
                 ConnectionEndpoint::Sandbox => Endpoint::Sandbox,
             };
 
-            let topic = String::from(event.get_apns_topic());
-
             if event.has_token() {
-                let token = event.mut_token();
-                let pkcs8 = token.mut_pkcs8().clone();
+                let token = event.get_token();
+                let mut pkcs8 = token.get_pkcs8().clone();
 
                 let notifier_result = Notifier::token(
-                    &mut pkcs8.as_slice(),
+                    &mut pkcs8,
                     token.get_key_id(),
                     token.get_team_id(),
                     endpoint,
-                    topic,
+                    event.get_apns_topic(),
                 );
 
                 match notifier_result {
@@ -152,18 +150,22 @@ impl EventHandler for ApnsHandler {
                         self.notifiers.insert(application_id, notifier);
                     },
                     Err(error) => {
-                        error!("Error creating a notifier for application #{}: {:?}", application_id, error);
+                        error!(
+                            "Error creating a notifier for application #{}: {:?}",
+                            application_id,
+                            error
+                        );
                     }
                 }
             } else if event.has_certificate() {
-                let certificate = event.mut_certificate();
-                let pkcs12 = certificate.mut_pkcs12().clone();
+                let certificate = event.get_certificate();
+                let mut pkcs12 = certificate.get_pkcs12().clone();
 
                 let notifier_result = Notifier::certificate(
-                    &mut pkcs12.as_slice(),
+                    &mut pkcs12,
                     certificate.get_password(),
                     endpoint,
-                    topic,
+                    event.get_apns_topic(),
                 );
 
                 match notifier_result {
@@ -171,7 +173,11 @@ impl EventHandler for ApnsHandler {
                         self.notifiers.insert(application_id, notifier);
                     },
                     Err(error) => {
-                        error!("Error creating a notifier for application #{}: {:?}", application_id, error);
+                        error!(
+                            "Error creating a notifier for application #{}: {:?}",
+                            application_id,
+                            error
+                        );
                     }
                 }
             } else {

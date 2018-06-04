@@ -44,7 +44,7 @@ impl Notifier {
         pkcs12: &mut R,
         password: &str,
         endpoint: Endpoint,
-        topic: String,
+        topic: &str,
     ) -> Result<Notifier, Error>
     where R: Read
     {
@@ -52,7 +52,11 @@ impl Notifier {
         let notifier_type = NotifierType::Certificate;
         CERTIFICATE_CONSUMERS.inc();
 
-        Ok(Notifier { client, topic, notifier_type })
+        Ok(Notifier {
+            client,
+            topic: String::from(topic),
+            notifier_type
+        })
     }
 
     pub fn token<R>(
@@ -60,7 +64,7 @@ impl Notifier {
         key_id: &str,
         team_id: &str,
         endpoint: Endpoint,
-        topic: String,
+        topic: &str,
     ) -> Result<Notifier, Error>
     where R: Read
     {
@@ -68,14 +72,22 @@ impl Notifier {
         let notifier_type = NotifierType::Token;
         TOKEN_CONSUMERS.inc();
 
-        Ok(Notifier { client, topic, notifier_type })
+        Ok(Notifier {
+            client,
+            topic: String::from(topic),
+            notifier_type
+        })
     }
 
     pub fn notify(&self, event: &PushNotification) -> Timeout<FutureResponse> {
         self.client.send_with_timeout(self.gen_payload(event), Duration::from_secs(3))
     }
 
-    fn gen_payload(&self, event: &PushNotification) -> Payload {
+    fn gen_payload<'a>(
+        &'a self,
+        event: &'a PushNotification
+    ) -> Payload<'a>
+    {
         let notification_data = event.get_apple();
         let headers = notification_data.get_headers();
 
@@ -90,15 +102,15 @@ impl Notifier {
             }
         }
         if event.has_correlation_id() {
-            options.apns_id = Some(String::from(event.get_correlation_id()));
+            options.apns_id = Some(event.get_correlation_id());
         }
         if headers.has_apns_expiration() {
             options.apns_expiration = Some(headers.get_apns_expiration() as u64);
         }
         if headers.has_apns_topic() {
-            options.apns_topic = Some(String::from(headers.get_apns_topic()));
+            options.apns_topic = Some(headers.get_apns_topic());
         } else {
-            options.apns_topic = Some(self.topic.clone());
+            options.apns_topic = Some(&self.topic);
         }
 
         let mut payload = if notification_data.has_localized() {
@@ -110,7 +122,7 @@ impl Notifier {
                 builder.set_title_loc_key(alert_data.get_title_loc_key());
             }
             if alert_data.get_title_loc_args().len() > 0 {
-                builder.set_title_loc_args(alert_data.get_title_loc_args().to_vec());
+                builder.set_title_loc_args(&alert_data.get_title_loc_args());
             }
             if alert_data.has_action_loc_key() {
                 builder.set_action_loc_key(alert_data.get_action_loc_key());
@@ -122,7 +134,7 @@ impl Notifier {
                 builder.set_loc_key(alert_data.get_loc_key());
             }
             if alert_data.get_loc_args().len() > 0 {
-                builder.set_loc_args(alert_data.get_loc_args().to_vec());
+                builder.set_loc_args(&alert_data.get_loc_args());
             }
             if notification_data.has_badge() {
                 builder.set_badge(notification_data.get_badge());

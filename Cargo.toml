@@ -4,7 +4,7 @@ version = "0.1.0"
 authors = ["Julius de Bruijn <julius.debruijn@360dialog.com>"]
 
 [dependencies]
-a2 = { git = "https://github.com/pimeys/a2" }
+a2 = { git = "https://github.com/pimeys/a2", branch = "referring_api" }
 fcm = { git = "https://github.com/panicbit/fcm-rust" }
 protobuf = { version = "2.0", features = ["with-bytes"] }
 chan-signal = "0.3"
