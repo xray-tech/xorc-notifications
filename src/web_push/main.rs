@@ -21,7 +21,6 @@ extern crate hyper;
 mod consumer;
 mod notifier;
 mod producer;
-mod error;
 
 use std::{
     thread::{
