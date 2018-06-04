@@ -13,14 +13,12 @@ use self::{
 
 pub mod push_notification;
 pub mod apple_notification;
-pub mod apple_config;
-pub mod google_config;
 pub mod google_notification;
 pub mod webpush_notification;
-pub mod web_push_config;
 pub mod push_result;
 pub mod map_field_entry;
 pub mod header;
+pub mod application;
 
 impl From<u16> for ApnsResult_Status {
     fn from(status: u16) -> ApnsResult_Status {

@@ -9,19 +9,14 @@ use std::{
 
 use common::{
     events::{
-        apple_config::*,
+        application::{
+            Application,
+            IosApplication_ConnectionEndpoint::*,
+        },
         push_notification::PushNotification,
-    },
-    logger::{
-        LogAction
     },
     metrics::*,
     kafka::EventHandler,
-};
-
-use gelf::{
-    Message as GelfMessage,
-    Error as GelfError
 };
 
 use a2::{
@@ -29,10 +24,8 @@ use a2::{
     client::Endpoint,
 };
 
-use protobuf::{parse_from_bytes};
 use notifier::Notifier;
 use producer::ApnsProducer;
-
 use ::GLOG;
 
 pub struct ApnsHandler {
@@ -51,37 +44,6 @@ impl ApnsHandler {
         }
     }
 
-    fn log_config_change(
-        &self,
-        title: &str,
-        event: &AppleConfig,
-    ) -> Result<(), GelfError>
-    {
-        let mut test_msg = GelfMessage::new(String::from(title));
-
-        test_msg.set_metadata("app_id", format!("{}", event.get_application_id()))?;
-
-        if event.has_token() {
-            test_msg.set_metadata("endpoint", format!("{:?}", event.get_endpoint()))?;
-            test_msg.set_metadata("action", format!("{:?}", LogAction::ConsumerCreate))?;
-            test_msg.set_metadata("connection_type", "token".to_string())?;
-
-            let token = event.get_token();
-
-            test_msg.set_metadata("key_id", token.get_key_id().to_string())?;
-            test_msg.set_metadata("team_id", token.get_team_id().to_string())?;
-        } else if event.has_certificate() {
-            test_msg.set_metadata("endpoint", format!("{:?}", event.get_endpoint()))?;
-            test_msg.set_metadata("action", format!("{:?}", LogAction::ConsumerCreate))?;
-            test_msg.set_metadata("connection_type", "certificate".to_string())?;
-        } else {
-            test_msg.set_metadata("action", format!("{:?}", LogAction::ConsumerDelete))?;
-        }
-
-        GLOG.log_message(test_msg);
-
-        Ok(())
-    }
 }
 
 impl EventHandler for ApnsHandler {
@@ -123,70 +85,81 @@ impl EventHandler for ApnsHandler {
         }
     }
 
-    fn handle_config(&mut self, payload: &[u8]) {
-        if let Ok(event) = parse_from_bytes::<AppleConfig>(payload) {
-            let _ = self.log_config_change("Push config update", &event);
-            let application_id = String::from(event.get_application_id());
+    fn handle_config(&mut self, application: Application) {
+        let application_id = application.get_id();
 
-            let endpoint = match event.get_endpoint() {
-                ConnectionEndpoint::Production => Endpoint::Production,
-                ConnectionEndpoint::Sandbox => Endpoint::Sandbox,
+        let _ = GLOG.log_config_change("Push config update", &application);
+
+        if !application.has_ios() {
+            if let Some(_) = self.notifiers.remove(application_id) {
+                info!("Deleted notifier for application #{}", application_id);
             };
 
-            if event.has_token() {
-                let token = event.get_token();
-                let mut pkcs8 = token.get_pkcs8().clone();
+            return
+        }
 
-                let notifier_result = Notifier::token(
-                    &mut pkcs8,
-                    token.get_key_id(),
-                    token.get_team_id(),
-                    endpoint,
-                    event.get_apns_topic(),
-                );
+        let ios_config = application.get_ios();
 
-                match notifier_result {
-                    Ok(notifier) => {
-                        self.notifiers.insert(application_id, notifier);
-                    },
-                    Err(error) => {
-                        error!(
-                            "Error creating a notifier for application #{}: {:?}",
-                            application_id,
-                            error
-                        );
-                    }
+        let endpoint = match ios_config.get_endpoint() {
+            Production => Endpoint::Production,
+            Sandbox    => Endpoint::Sandbox,
+        };
+
+        if ios_config.has_token() {
+            let token = ios_config.get_token();
+            let mut pkcs8 = token.get_pkcs8().clone();
+
+            let notifier_result = Notifier::token(
+                &mut pkcs8,
+                token.get_key_id(),
+                token.get_team_id(),
+                endpoint,
+                ios_config.get_apns_topic(),
+            );
+
+            match notifier_result {
+                Ok(notifier) => {
+                    self.notifiers.insert(
+                        application_id.to_string(),
+                        notifier
+                    );
+                },
+                Err(error) => {
+                    error!(
+                        "Error creating a notifier for application #{}: {:?}",
+                        application_id,
+                        error
+                    );
                 }
-            } else if event.has_certificate() {
-                let certificate = event.get_certificate();
-                let mut pkcs12 = certificate.get_pkcs12().clone();
+            }
+        } else if ios_config.has_certificate() {
+            let certificate = ios_config.get_certificate();
+            let mut pkcs12 = certificate.get_pkcs12().clone();
 
-                let notifier_result = Notifier::certificate(
-                    &mut pkcs12,
-                    certificate.get_password(),
-                    endpoint,
-                    event.get_apns_topic(),
-                );
+            let notifier_result = Notifier::certificate(
+                &mut pkcs12,
+                certificate.get_password(),
+                endpoint,
+                ios_config.get_apns_topic(),
+            );
 
-                match notifier_result {
-                    Ok(notifier) => {
-                        self.notifiers.insert(application_id, notifier);
-                    },
-                    Err(error) => {
-                        error!(
-                            "Error creating a notifier for application #{}: {:?}",
-                            application_id,
-                            error
-                        );
-                    }
-                }
-            } else {
-                if let Some(_) = self.notifiers.remove(&application_id) {
-                    info!("Deleted notifier for application #{}", application_id);
+            match notifier_result {
+                Ok(notifier) => {
+                    self.notifiers.insert(
+                        application_id.to_string(),
+                        notifier
+                    );
+                },
+                Err(error) => {
+                    error!(
+                        "Error creating a notifier for application #{}: {:?}",
+                        application_id,
+                        error
+                    );
                 }
             }
         } else {
-            error!("Error parsing protobuf");
+            error!("Unsupported iOS application type");
         }
     }
 }

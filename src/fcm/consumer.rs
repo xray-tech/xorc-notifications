@@ -4,8 +4,10 @@ use std::{
 
 use common::{
     metrics::*,
-    events::push_notification::PushNotification,
-    events::google_config::GoogleConfig,
+    events::{
+        push_notification::PushNotification,
+        application::Application,
+    },
     kafka::EventHandler,
 };
 
@@ -15,9 +17,7 @@ use futures::{
 };
 
 use notifier::Notifier;
-use protobuf::parse_from_bytes;
 use producer::FcmProducer;
-use gelf;
 
 pub struct FcmHandler {
     producer: FcmProducer,
@@ -38,22 +38,6 @@ impl FcmHandler {
             api_keys,
             notifier,
         }
-    }
-
-    fn log_config_change(
-        &self,
-        title: &str,
-        event: &GoogleConfig,
-    ) -> Result<(), gelf::Error>
-    {
-        let mut test_msg = gelf::Message::new(String::from(title));
-
-        test_msg.set_metadata("app_id", format!("{}", event.get_application_id()))?;
-        test_msg.set_metadata("api_key", format!("{}", event.get_fcm_api_key()))?;
-
-        GLOG.log_message(test_msg);
-
-        Ok(())
     }
 }
 
@@ -95,21 +79,28 @@ impl EventHandler for FcmHandler {
     }
 
 
-    fn handle_config(&mut self, payload: &[u8]) {
-        if let Ok(event) = parse_from_bytes::<GoogleConfig>(payload) {
-            let _ = self.log_config_change("Push config update", &event);
-            let application_id = event.get_application_id();
+    fn handle_config(&mut self, application: Application) {
+        let application_id = application.get_id();
 
-            if event.has_fcm_api_key() {
-                self.api_keys.insert(
-                    String::from(application_id),
-                    String::from(event.get_fcm_api_key()),
-                );
-            } else {
-                self.api_keys.remove(application_id);
-            }
+        let _ = GLOG.log_config_change("Push config update", &application);
+
+        if !application.has_android() {
+            if let Some(_) = self.api_keys.remove(application_id) {
+                info!("Deleted notifier for application #{}", application_id);
+            };
+
+            return
+        }
+
+        let android_app = application.get_android();
+
+        if android_app.has_fcm_api_key() {
+            self.api_keys.insert(
+                String::from(application_id),
+                String::from(android_app.get_fcm_api_key()),
+            );
         } else {
-            error!("Error parsing protobuf");
+            self.api_keys.remove(application_id);
         }
     }
 

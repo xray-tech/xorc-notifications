@@ -1,14 +1,20 @@
 use prometheus::{self, CounterVec, Encoder, Gauge, Histogram, TextEncoder};
 use std::env;
-use futures::future::{ok, FutureResult};
+use http::header;
 
-use hyper::header::ContentType;
-use hyper::header::ContentLength;
-use hyper::server::{Http, Request, Response, Service};
-use hyper::mime::Mime;
-use hyper::Error as HyperError;
-use futures::sync::oneshot::Receiver;
-use futures::Future;
+use hyper::{
+    rt,
+    Body,
+    Request,
+    Response,
+    Server,
+    service::service_fn_ok,
+};
+
+use futures::{
+    sync::oneshot::Receiver,
+    Future,
+};
 
 lazy_static! {
     pub static ref CALLBACKS_COUNTER: CounterVec = register_counter_vec!(
@@ -41,32 +47,26 @@ lazy_static! {
 #[derive(Clone, Copy)]
 pub struct StatisticsServer;
 
-impl Service for StatisticsServer {
-    type Request = Request;
-    type Response = Response;
-    type Error = HyperError;
-    type Future = FutureResult<Response, HyperError>;
-
-    fn call(&self, _: Request) -> Self::Future {
-        let encoder = TextEncoder::new();
-        let metric_families = prometheus::gather();
-        let mut buffer = vec![];
-
-        encoder.encode(&metric_families, &mut buffer).unwrap();
-
-        let content_type = ContentType(encoder.format_type().parse::<Mime>().unwrap());
-        let content_length = ContentLength(buffer.len() as u64);
-
-        ok({
-            Response::new()
-                .with_header(content_length)
-                .with_header(content_type)
-                .with_body(buffer)
-        })
-    }
-}
-
 impl StatisticsServer {
+    fn prometheus(_: Request<Body>) -> Response<Body> {
+        let encoder         = TextEncoder::new();
+        let metric_families = prometheus::gather();
+        let mut buffer      = vec![];
+        let mut builder     = Response::builder();
+
+        encoder.encode(
+            &metric_families,
+            &mut buffer
+        ).unwrap();
+
+        builder.header(
+            header::CONTENT_TYPE,
+            encoder.format_type()
+        );
+
+        builder.body(buffer.into()).unwrap()
+    }
+
     pub fn handle(rx: Receiver<()>) {
         let port = match env::var("PORT") {
             Ok(val) => val,
@@ -74,8 +74,11 @@ impl StatisticsServer {
         };
 
         let addr = format!("0.0.0.0:{}", port).parse().unwrap();
-        let server = Http::new().bind(&addr, || Ok(StatisticsServer)).unwrap();
 
-        server.run_until(rx.map_err(|_| ())).unwrap();
+        let server = Server::bind(&addr)
+            .serve(|| service_fn_ok(Self::prometheus))
+            .map_err(|e| eprintln!("server error: {}", e));
+
+        rt::run(server.select2(rx).then(move |_| Ok(())));
     }
 }

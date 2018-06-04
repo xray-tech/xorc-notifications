@@ -14,7 +14,12 @@ use kafka::{
     offset_counter::OffsetCounter
 };
 
-use events::push_notification::PushNotification;
+use events::{
+    push_notification::PushNotification,
+    application::Application,
+};
+
+
 use futures::{Future, sync::oneshot, Stream};
 use protobuf::parse_from_bytes;
 use tokio_core::reactor::Core;
@@ -23,7 +28,7 @@ pub trait EventHandler {
     fn handle_notification(&self, event: PushNotification) ->
         Box<Future<Item=(), Error=()> + 'static + Send>;
 
-    fn handle_config(&mut self, payload: &[u8]);
+    fn handle_config(&mut self, config: Application);
 }
 
 pub struct PushConsumer<H: EventHandler> {
@@ -105,19 +110,37 @@ impl<H: EventHandler> PushConsumer<H> {
                             warn!("Error storing offset: #{}", e);
                         }
 
-                        let event_parsing = parse_from_bytes::<PushNotification>(
-                            msg.payload().unwrap()
-                        );
+                        let event_parsing = msg
+                            .payload()
+                            .and_then(|payload| {
+                                parse_from_bytes::<PushNotification>(payload).ok()
+                            });
 
-                        if let Ok(event) = event_parsing {
-                            let notification_handling = self.handler.handle_notification(event);
-                            handle.spawn(notification_handling);
-                        } else {
-                            error!("Error parsing protobuf");
+                        match event_parsing {
+                            Some(event) => {
+                                let notification_handling = self.handler.handle_notification(event);
+                                handle.spawn(notification_handling);
+                            },
+                            None => {
+                                error!("Error parsing notification protobuf");
+                            }
                         }
                     },
                     t if t == self.config_topic => {
-                        self.handler.handle_config(msg.payload().unwrap());
+                        let event_parsing = msg
+                            .payload()
+                            .and_then(|payload| {
+                                parse_from_bytes::<Application>(payload).ok()
+                            });
+
+                        match event_parsing {
+                            Some(event) => {
+                                self.handler.handle_config(event);
+                            },
+                            None => {
+                                error!("Error parsing notification protobuf");
+                            }
+                        }
                     },
                     t => {
                         error!("Unsupported topic: {}", t);

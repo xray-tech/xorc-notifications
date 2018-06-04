@@ -2,6 +2,7 @@ use log::LevelFilter;
 use gelf::{Error, Logger, Message, UdpBackend, Level};
 use std::env;
 use env_logger;
+use events::application::Application;
 
 #[derive(Debug)]
 pub enum LogAction {
@@ -33,29 +34,33 @@ impl GelfLogger {
             let mut env_logger = Logger::new(Box::new(UdpBackend::new(host)?))?;
 
             logger.set_default_metadata(
-                String::from("application_name"),
-                application_name.to_string()
+                "application_name",
+                application_name
             );
 
             env_logger.set_default_metadata(
-                String::from("application_name"),
-                application_name.to_string()
+                "application_name",
+                application_name
             );
 
             if let Ok(environment) = env::var("RUST_ENV") {
                 logger.set_default_metadata(
-                    String::from("environment"),
-                    String::from(environment.clone()),
+                    "environment",
+                    environment.clone(),
                 );
                 env_logger.set_default_metadata(
-                    String::from("environment"),
-                    String::from(environment.clone()),
+                    "environment",
+                    environment.clone(),
                 );
             } else {
-                logger
-                    .set_default_metadata(String::from("environment"), String::from("development"));
-                env_logger
-                    .set_default_metadata(String::from("environment"), String::from("development"));
+                logger.set_default_metadata(
+                    "environment",
+                    "development"
+                );
+                env_logger.set_default_metadata(
+                    "environment",
+                    "development"
+                );
             };
 
             let filter = match env::var("RUST_LOG") {
@@ -109,5 +114,45 @@ impl GelfLogger {
                 }
             }
         }
+    }
+
+    pub fn log_config_change(
+        &self,
+        title: &str,
+        application: &Application,
+    ) -> Result<(), Error>
+    {
+        let mut test_msg = Message::new(title);
+
+        test_msg.set_metadata("app_id", application.get_id())?;
+
+        if application.has_ios() {
+            let ios_app = application.get_ios();
+
+            if ios_app.has_token() {
+                test_msg.set_metadata("endpoint", format!("{:?}", ios_app.get_endpoint()))?;
+                test_msg.set_metadata("action", format!("{:?}", LogAction::ConsumerCreate))?;
+                test_msg.set_metadata("connection_type", "token")?;
+
+                let token = ios_app.get_token();
+
+                test_msg.set_metadata("key_id", token.get_key_id())?;
+                test_msg.set_metadata("team_id", token.get_team_id())?;
+            } else if ios_app.has_certificate() {
+                test_msg.set_metadata("endpoint", format!("{:?}", ios_app.get_endpoint()))?;
+                test_msg.set_metadata("action", format!("{:?}", LogAction::ConsumerCreate))?;
+                test_msg.set_metadata("connection_type", "certificate")?;
+            }
+        } else if application.has_android() {
+            let android_app = application.get_android();
+            test_msg.set_metadata("api_key", android_app.get_fcm_api_key())?;
+        } else if application.has_web() {
+            let web_app = application.get_web();
+            test_msg.set_metadata("fcm_api_key", web_app.get_fcm_api_key())?;
+        }
+
+        self.log_message(test_msg);
+
+        Ok(())
     }
 }

@@ -4,8 +4,10 @@ use std::{
 
 use common::{
     metrics::*,
-    events::push_notification::PushNotification,
-    events::web_push_config::WebPushConfig,
+    events::{
+        push_notification::PushNotification,
+        application::Application,
+    },
     kafka::EventHandler,
 };
 
@@ -15,9 +17,7 @@ use futures::{
 };
 
 use notifier::Notifier;
-use protobuf::parse_from_bytes;
 use producer::WebPushProducer;
-use gelf;
 use ::{GLOG};
 
 struct ApiKey {
@@ -43,22 +43,6 @@ impl WebPushHandler {
             notifier,
         }
     }
-
-    fn log_config_change(
-        &self,
-        title: &str,
-        event: &WebPushConfig,
-    ) -> Result<(), gelf::Error>
-    {
-        let mut test_msg = gelf::Message::new(String::from(title));
-
-        test_msg.set_metadata("app_id", format!("{}", event.get_application_id()))?;
-        test_msg.set_metadata("api_key", format!("{}", event.get_fcm_api_key()))?;
-
-        GLOG.log_message(test_msg);
-
-        Ok(())
-    }
 }
 
 impl EventHandler for WebPushHandler {
@@ -67,7 +51,6 @@ impl EventHandler for WebPushHandler {
         event: PushNotification
     ) -> Box<Future<Item=(), Error=()> + 'static + Send>
     {
-
         let producer = self.producer.clone();
 
         match self.fcm_api_keys.get(event.get_application_id()) {
@@ -98,25 +81,30 @@ impl EventHandler for WebPushHandler {
         }
     }
 
-    fn handle_config(&mut self, payload: &[u8]) {
-        if let Ok(event) = parse_from_bytes::<WebPushConfig>(payload) {
-            let _ = self.log_config_change("Push config update", &event);
+    fn handle_config(&mut self, application: Application) {
+        let application_id = application.get_id();
+        let _ = GLOG.log_config_change("Push config update", &application);
 
-            if event.has_fcm_api_key() {
-                self.fcm_api_keys.insert(
-                    String::from(event.get_application_id()),
-                    ApiKey { fcm_api_key: Some(event.get_fcm_api_key().to_string())},
-                );
-            } else if event.has_no_fcm_api_key() {
-                self.fcm_api_keys.insert(
-                    String::from(event.get_application_id()),
-                    ApiKey { fcm_api_key: None },
-                );
-            } else {
-                self.fcm_api_keys.remove(event.get_application_id());
-            }
+        if !application.has_web() {
+            if let Some(_) = self.fcm_api_keys.remove(application_id) {
+                info!("Deleted notifier for application #{}", application_id);
+            };
+
+            return
+        }
+
+        let web_app = application.get_web();
+
+        if web_app.has_fcm_api_key() {
+            self.fcm_api_keys.insert(
+                String::from(application_id),
+                ApiKey { fcm_api_key: Some(web_app.get_fcm_api_key().to_string())},
+            );
         } else {
-            error!("Error parsing protobuf");
+            self.fcm_api_keys.insert(
+                String::from(application_id),
+                ApiKey { fcm_api_key: None },
+            );
         }
     }
 }

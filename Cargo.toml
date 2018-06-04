@@ -4,20 +4,20 @@ version = "0.1.0"
 authors = ["Julius de Bruijn <julius.debruijn@360dialog.com>"]
 
 [dependencies]
-a2 = { git = "https://github.com/pimeys/a2", branch = "referring_api" }
-fcm = { git = "https://github.com/panicbit/fcm-rust" }
+a2 = "0.3"
+fcm = "0.3"
 protobuf = { version = "2.0", features = ["with-bytes"] }
 chan-signal = "0.3"
 chan = "0.1"
 argparse = "0.2"
 env_logger = "0.5"
-gelf = "0.2"
+gelf = { git = "https://github.com/pimeys/gelf-rust", branch = "borrowing_message_interface" }
 log = "0.4"
 toml = "0.4"
 serde = "1.0"
 serde_derive = "1.0"
 time = "0.1"
-hyper = "0.11"
+hyper = "0.12"
 http = "0.1"
 prometheus = "0.4"
 lazy_static = "1.0"
@@ -32,7 +32,7 @@ tokio-timer = "0.1"
 rdkafka = "0.16"
 chrono = "0.4"
 base64 = "0.6"
-web-push = { git = "https://github.com/pimeys/rust-web-push" }
+web-push = "0.4"
 
 [build-dependencies]
 protoc-rust = "2.0"
