@@ -5,7 +5,8 @@ authors = ["Julius de Bruijn <julius.debruijn@360dialog.com>"]
 
 [dependencies]
 a2 = "0.3"
-fcm = "0.3"
+fcm = "0.4"
+web-push = "0.4"
 protobuf = { version = "2.0", features = ["with-bytes"] }
 chan-signal = "0.3"
 chan = "0.1"
@@ -32,7 +33,6 @@ tokio-timer = "0.1"
 rdkafka = "0.16"
 chrono = "0.4"
 base64 = "0.6"
-web-push = "0.4"
 
 [build-dependencies]
 protoc-rust = "2.0"

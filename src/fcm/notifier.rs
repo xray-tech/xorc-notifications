@@ -28,7 +28,7 @@ impl Notifier {
         self.client.send(Self::gen_payload(event, api_key))
     }
 
-    fn gen_payload(pn: &PushNotification, api_key: &str) -> Message {
+    fn gen_payload<'a>(pn: &'a PushNotification, api_key: &'a str) -> Message<'a> {
         let notification = pn.get_google();
         let mut message  = MessageBuilder::new(api_key, pn.get_device_token());
 
@@ -48,11 +48,11 @@ impl Notifier {
             if localized.has_title_loc_key() { builder.title_loc_key(localized.get_title_loc_key()); }
 
             if localized.get_title_loc_args().len() > 0 {
-                builder.title_loc_args(localized.get_title_loc_args().to_vec());
+                builder.title_loc_args(localized.get_title_loc_args());
             }
 
             if localized.get_body_loc_args().len() > 0 {
-                builder.body_loc_args(localized.get_body_loc_args().to_vec());
+                builder.body_loc_args(localized.get_body_loc_args());
             }
 
             let key_values = localized.get_data().iter();
@@ -81,7 +81,7 @@ impl Notifier {
         }
 
         if notification.get_registration_ids().len() > 0 {
-            message.registration_ids(notification.get_registration_ids().to_vec());
+            message.registration_ids(notification.get_registration_ids());
         }
 
         if notification.has_collapse_key() {
