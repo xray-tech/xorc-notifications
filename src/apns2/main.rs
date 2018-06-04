@@ -1,8 +1,6 @@
 #[macro_use]
 extern crate chan;
 #[macro_use]
-extern crate serde_derive;
-#[macro_use]
 extern crate log;
 #[macro_use]
 extern crate lazy_static;
@@ -28,12 +26,12 @@ extern crate chrono;
 mod notifier;
 mod consumer;
 mod producer;
-mod config;
 
 use common::{
     metrics::StatisticsServer,
     logger::GelfLogger,
     kafka::PushConsumer,
+    config::Config,
 };
 
 use std::{
@@ -48,7 +46,7 @@ use futures::{
 
 use consumer::ApnsHandler;
 use chan_signal::{notify, Signal};
-use config::Config;
+use argparse::{ArgumentParser, Store};
 
 lazy_static! {
     pub static ref CONFIG: Config =
@@ -72,6 +70,18 @@ fn main() {
     let exit_signal = notify(&[Signal::INT, Signal::TERM]);
     let (server_tx, server_rx) = oneshot::channel();
     let (consumer_tx, consumer_rx) = oneshot::channel();
+    let mut consumer_partition = 1;
+
+    {
+        let mut ap = ArgumentParser::new();
+        ap.set_description("Apple Push Notification System");
+        ap.refer(&mut consumer_partition).add_option(
+            &["-p", "--partition"],
+            Store,
+            "Kafka partition to consume, (default: 1)",
+        );
+        ap.parse_args_or_exit();
+    }
 
     info!("Apple Push Notification System starting up!");
 
@@ -85,7 +95,7 @@ fn main() {
             let mut consumer = PushConsumer::new(
                 handler,
                 &CONFIG.kafka,
-                1
+                consumer_partition,
             );
 
             if let Err(error) = consumer.consume(consumer_rx) {

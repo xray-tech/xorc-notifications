@@ -1,12 +1,16 @@
-use std::fs::File;
-use std::io::prelude::*;
+use kafka;
+use logger;
 use toml;
-use common::kafka;
+
+use std::{
+    fs::File,
+    io::prelude::*,
+};
 
 #[derive(Deserialize, Debug)]
 pub struct Config {
     pub kafka: kafka::Config,
-    pub log: LogConfig,
+    pub log: logger::Config,
 }
 
 impl Config {
@@ -25,18 +29,4 @@ impl Config {
 
         toml::from_str(&config_toml).unwrap()
     }
-}
-
-#[derive(Deserialize, Debug)]
-pub struct PostgresConfig {
-    pub uri: String,
-    pub pool_size: u32,
-    pub min_idle: u32,
-    pub idle_timeout: u64,
-    pub max_lifetime: u64,
-}
-
-#[derive(Deserialize, Debug)]
-pub struct LogConfig {
-    pub host: String,
 }

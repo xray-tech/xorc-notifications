@@ -2,8 +2,6 @@
 extern crate log;
 #[macro_use]
 extern crate lazy_static;
-#[macro_use]
-extern crate serde_derive;
 
 extern crate gelf;
 extern crate futures;
@@ -20,7 +18,6 @@ extern crate rdkafka;
 extern crate chrono;
 extern crate hyper;
 
-mod config;
 mod consumer;
 mod notifier;
 mod producer;
@@ -38,10 +35,10 @@ use common::{
     metrics::StatisticsServer,
     logger::GelfLogger,
     kafka::PushConsumer,
+    config::Config,
 };
 
 use chan_signal::{Signal, notify};
-use config::Config;
 use futures::sync::oneshot;
 use consumer::WebPushHandler;
 

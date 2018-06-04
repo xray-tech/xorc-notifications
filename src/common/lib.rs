@@ -19,8 +19,11 @@ extern crate a2;
 extern crate web_push;
 extern crate rdkafka;
 extern crate tokio_core;
+extern crate toml;
+extern crate erased_serde;
 
 pub mod events;
 pub mod logger;
 pub mod metrics;
 pub mod kafka;
+pub mod config;

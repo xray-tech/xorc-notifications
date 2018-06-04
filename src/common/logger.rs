@@ -4,6 +4,11 @@ use std::env;
 use env_logger;
 use events::application::Application;
 
+#[derive(Deserialize, Debug)]
+pub struct Config {
+    pub host: String,
+}
+
 #[derive(Debug)]
 pub enum LogAction {
     ConsumerCreate,

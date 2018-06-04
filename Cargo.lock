@@ -1711,6 +1711,7 @@ dependencies = [
  "chan-signal 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "chrono 0.4.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "env_logger 0.5.10 (registry+https://github.com/rust-lang/crates.io-index)",
+ "erased-serde 0.3.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "fcm 0.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "futures 0.1.21 (registry+https://github.com/rust-lang/crates.io-index)",
  "gelf 0.2.2 (git+https://github.com/pimeys/gelf-rust?branch=borrowing_message_interface)",

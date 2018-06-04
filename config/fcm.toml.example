@@ -2,8 +2,8 @@
 host = "graylog.service.consul:12201"
 
 [kafka]
-input_topic  = "development.notifications.ios"
+input_topic  = "development.notifications.android"
 config_topic = "development.crm.applications"
 output_topic = "development.oam"
-group_id     = "development.consumers.apns"
+group_id     = "development.consumers.fcm"
 brokers      = "kafka:9092"

@@ -33,6 +33,7 @@ tokio-timer = "0.1"
 rdkafka = "0.16"
 chrono = "0.4"
 base64 = "0.6"
+erased-serde = "0.3"
 
 [build-dependencies]
 protoc-rust = "2.0"

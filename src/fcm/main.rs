@@ -1,8 +1,6 @@
 #[macro_use]
 extern crate log;
 #[macro_use]
-extern crate serde_derive;
-#[macro_use]
 extern crate lazy_static;
 
 extern crate gelf;
@@ -21,7 +19,6 @@ extern crate tokio_core;
 extern crate tokio_signal;
 extern crate common;
 
-mod config;
 mod consumer;
 mod notifier;
 mod producer;
@@ -30,6 +27,7 @@ use common::{
     logger::GelfLogger,
     metrics::StatisticsServer,
     kafka::PushConsumer,
+    config::Config,
 };
 
 use std::{
@@ -37,7 +35,6 @@ use std::{
     env,
 };
 
-use config::Config;
 use chan_signal::{Signal, notify};
 use consumer::FcmHandler;
 use futures::sync::oneshot;
