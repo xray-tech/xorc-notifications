@@ -1,29 +1,17 @@
-use std::{
-    collections::HashMap,
-};
+use std::collections::HashMap;
 
-use common::{
-    metrics::*,
-    events::{
-        push_notification::PushNotification,
-        application::Application,
-    },
-    kafka::EventHandler,
-};
+use common::{events::{application::Application, push_notification::PushNotification},
+             kafka::EventHandler, metrics::*};
 
-use futures::{
-    Future,
-    future::ok,
-};
+use futures::{Future, future::ok};
 
+use GLOG;
 use notifier::Notifier;
 use producer::WebPushProducer;
-use ::{GLOG};
 
 struct ApiKey {
-    fcm_api_key: Option<String>
+    fcm_api_key: Option<String>,
 }
-
 
 pub struct WebPushHandler {
     producer: WebPushProducer,
@@ -48,9 +36,8 @@ impl WebPushHandler {
 impl EventHandler for WebPushHandler {
     fn handle_notification(
         &self,
-        event: PushNotification
-    ) -> Box<Future<Item=(), Error=()> + 'static + Send>
-    {
+        event: PushNotification,
+    ) -> Box<Future<Item = (), Error = ()> + 'static + Send> {
         let producer = self.producer.clone();
 
         match self.fcm_api_keys.get(event.get_application_id()) {
@@ -65,19 +52,15 @@ impl EventHandler for WebPushHandler {
                         CALLBACKS_INFLIGHT.dec();
 
                         match result {
-                            Ok(()) =>
-                                producer.handle_ok(event),
-                            Err(error) =>
-                                producer.handle_error(event, error),
+                            Ok(()) => producer.handle_ok(event),
+                            Err(error) => producer.handle_error(event, error),
                         }
                     })
                     .then(|_| ok(()));
 
                 Box::new(notification_send)
-            },
-            None => {
-                Box::new(self.producer.handle_no_cert(event).then(|_| ok(())))
             }
+            None => Box::new(self.producer.handle_no_cert(event).then(|_| ok(()))),
         }
     }
 
@@ -90,7 +73,7 @@ impl EventHandler for WebPushHandler {
                 info!("Deleted notifier for application #{}", application_id);
             };
 
-            return
+            return;
         }
 
         let web_app = application.get_web();
@@ -98,13 +81,13 @@ impl EventHandler for WebPushHandler {
         if web_app.has_fcm_api_key() {
             self.fcm_api_keys.insert(
                 String::from(application_id),
-                ApiKey { fcm_api_key: Some(web_app.get_fcm_api_key().to_string())},
+                ApiKey {
+                    fcm_api_key: Some(web_app.get_fcm_api_key().to_string()),
+                },
             );
         } else {
-            self.fcm_api_keys.insert(
-                String::from(application_id),
-                ApiKey { fcm_api_key: None },
-            );
+            self.fcm_api_keys
+                .insert(String::from(application_id), ApiKey { fcm_api_key: None });
         }
     }
 }

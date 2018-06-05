@@ -1,20 +1,9 @@
-use std::{
-    collections::HashMap,
-};
+use std::collections::HashMap;
 
-use common::{
-    metrics::*,
-    events::{
-        push_notification::PushNotification,
-        application::Application,
-    },
-    kafka::EventHandler,
-};
+use common::{events::{application::Application, push_notification::PushNotification},
+             kafka::EventHandler, metrics::*};
 
-use futures::{
-    Future,
-    future::ok,
-};
+use futures::{Future, future::ok};
 
 use notifier::Notifier;
 use producer::FcmProducer;
@@ -25,7 +14,7 @@ pub struct FcmHandler {
     notifier: Notifier,
 }
 
-use ::{GLOG};
+use GLOG;
 
 impl FcmHandler {
     pub fn new() -> FcmHandler {
@@ -45,39 +34,31 @@ impl EventHandler for FcmHandler {
     fn handle_notification(
         &self,
         event: PushNotification,
-    ) -> Box<Future<Item=(), Error=()> + 'static + Send>
-    {
+    ) -> Box<Future<Item = (), Error = ()> + 'static + Send> {
         let timer = RESPONSE_TIMES_HISTOGRAM.start_timer();
         CALLBACKS_INFLIGHT.inc();
 
         if let Some(api_key) = self.api_keys.get(event.get_application_id()) {
             let producer = self.producer.clone();
 
-            Box::new(self.notifier
-                     .notify(&event, api_key)
-                     .then(move |result| {
-                         timer.observe_duration();
-                         CALLBACKS_INFLIGHT.dec();
+            Box::new(
+                self.notifier
+                    .notify(&event, api_key)
+                    .then(move |result| {
+                        timer.observe_duration();
+                        CALLBACKS_INFLIGHT.dec();
 
-                         match result {
-                             Ok(response) =>
-                                 producer.handle_response(
-                                     event,
-                                     response
-                                 ),
-                             Err(error) =>
-                                 producer.handle_error(
-                                     event,
-                                     error
-                                 ),
-                         }
-                     })
-                     .then(|_| ok(())))
+                        match result {
+                            Ok(response) => producer.handle_response(event, response),
+                            Err(error) => producer.handle_error(event, error),
+                        }
+                    })
+                    .then(|_| ok(())),
+            )
         } else {
             Box::new(self.producer.handle_no_cert(event).then(|_| ok(())))
         }
     }
-
 
     fn handle_config(&mut self, application: Application) {
         let application_id = application.get_id();
@@ -89,7 +70,7 @@ impl EventHandler for FcmHandler {
                 info!("Deleted notifier for application #{}", application_id);
             };
 
-            return
+            return;
         }
 
         let android_app = application.get_android();
@@ -103,5 +84,4 @@ impl EventHandler for FcmHandler {
             self.api_keys.remove(application_id);
         }
     }
-
 }

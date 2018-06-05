@@ -1,32 +1,15 @@
-use gelf::{
-    Level as GelfLevel,
-    Message as GelfMessage,
-    Error as GelfError
-};
+use gelf::{Error as GelfError, Level as GelfLevel, Message as GelfMessage};
 
-use a2::{
-    response::Response,
-    error::Error,
-};
+use a2::{error::Error, response::Response};
 
-use common::{
-    logger::LogAction,
-    metrics::*,
-    events::{
-        apple_notification::*,
-        apple_notification::ApnsResult_Reason::*,
-        apple_notification::ApnsResult_Status::*,
-        push_notification::PushNotification,
-        ResponseAction,
-    },
-    kafka::{
-        ResponseProducer,
-        DeliveryFuture,
-    },
-};
+use common::{events::{ResponseAction, apple_notification::*,
+                      apple_notification::ApnsResult_Reason::*,
+                      apple_notification::ApnsResult_Status::*,
+                      push_notification::PushNotification},
+             kafka::{DeliveryFuture, ResponseProducer}, logger::LogAction, metrics::*};
 
 use heck::SnakeCase;
-use ::{GLOG, CONFIG};
+use {CONFIG, GLOG};
 
 pub struct ApnsProducer {
     producer: ResponseProducer,
@@ -46,7 +29,7 @@ impl ApnsProducer {
             "Successfully sent a push notification",
             &event,
             Some(&response),
-            None
+            None,
         );
 
         let mut apns_result = ApnsResult::new();
@@ -64,7 +47,7 @@ impl ApnsProducer {
             "Error sending a push notification",
             &event,
             Some(&response),
-            None
+            None,
         );
 
         let mut apns_result = ApnsResult::new();
@@ -93,15 +76,13 @@ impl ApnsProducer {
         }
 
         let response_action = match apns_result.get_reason() {
-            InternalServerError | Shutdown | ServiceUnavailable | ExpiredProviderToken =>
-                ResponseAction::Retry,
-            DeviceTokenNotForTopic | BadDeviceToken =>
-                ResponseAction::UnsubscribeEntity,
+            InternalServerError | Shutdown | ServiceUnavailable | ExpiredProviderToken => {
+                ResponseAction::Retry
+            }
+            DeviceTokenNotForTopic | BadDeviceToken => ResponseAction::UnsubscribeEntity,
             _ => match apns_result.get_status() {
-                Timeout | Unknown | Forbidden =>
-                    ResponseAction::Retry,
-                _ =>
-                    ResponseAction::None,
+                Timeout | Unknown | Forbidden => ResponseAction::Retry,
+                _ => ResponseAction::None,
             },
         };
 
@@ -135,9 +116,8 @@ impl ApnsProducer {
         title: &str,
         event: &PushNotification,
         response: Option<&Response>,
-        error: Option<Error>
-    ) -> Result<(), GelfError>
-    {
+        error: Option<Error>,
+    ) -> Result<(), GelfError> {
         let mut test_msg = GelfMessage::new(String::from(title));
         test_msg.set_metadata("action", format!("{:?}", LogAction::NotificationResult))?;
 
@@ -185,7 +165,7 @@ impl ApnsProducer {
 impl Clone for ApnsProducer {
     fn clone(&self) -> Self {
         ApnsProducer {
-            producer: self.producer.clone()
+            producer: self.producer.clone(),
         }
     }
 }

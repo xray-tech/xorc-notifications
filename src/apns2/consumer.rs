@@ -1,32 +1,18 @@
-use futures::{
-    Future,
-    future::ok,
-};
+use futures::{Future, future::ok};
 
-use std::{
-    collections::HashMap,
-};
+use std::collections::HashMap;
 
-use common::{
-    events::{
-        application::{
-            Application,
-            IosApplication_ConnectionEndpoint::*,
-        },
-        push_notification::PushNotification,
-    },
-    metrics::*,
-    kafka::EventHandler,
-};
+use common::{events::{application::{Application,
+                                    IosApplication_ConnectionEndpoint::{Production, Sandbox},
+                                    IosCertificate, IosToken},
+                      push_notification::PushNotification},
+             kafka::EventHandler, metrics::*};
 
-use a2::{
-    error::Error,
-    client::Endpoint,
-};
+use a2::{client::Endpoint, error::Error};
 
+use GLOG;
 use notifier::Notifier;
 use producer::ApnsProducer;
-use ::GLOG;
 
 pub struct ApnsHandler {
     producer: ApnsProducer,
@@ -44,14 +30,55 @@ impl ApnsHandler {
         }
     }
 
+    fn add_certificate_notifier(
+        &mut self,
+        certificate: &IosCertificate,
+        endpoint: Endpoint,
+        application_id: &str,
+        apns_topic: &str,
+    ) -> Result<(), Error> {
+        let mut pkcs12 = certificate.get_pkcs12().clone();
+
+        let notifier = Notifier::certificate(
+            &mut pkcs12,
+            certificate.get_password(),
+            endpoint,
+            apns_topic,
+        )?;
+
+        self.notifiers.insert(application_id.to_string(), notifier);
+
+        Ok(())
+    }
+
+    fn add_token_notifier(
+        &mut self,
+        token: &IosToken,
+        endpoint: Endpoint,
+        application_id: &str,
+        apns_topic: &str,
+    ) -> Result<(), Error> {
+        let mut pkcs8 = token.get_pkcs8().clone();
+
+        let notifier = Notifier::token(
+            &mut pkcs8,
+            token.get_key_id(),
+            token.get_team_id(),
+            endpoint,
+            apns_topic,
+        )?;
+
+        self.notifiers.insert(application_id.to_string(), notifier);
+
+        Ok(())
+    }
 }
 
 impl EventHandler for ApnsHandler {
     fn handle_notification(
         &self,
         event: PushNotification,
-    ) -> Box<Future<Item=(), Error=()> + 'static + Send>
-    {
+    ) -> Box<Future<Item = (), Error = ()> + 'static + Send> {
         let producer = self.producer.clone();
         let timer = RESPONSE_TIMES_HISTOGRAM.start_timer();
 
@@ -65,12 +92,9 @@ impl EventHandler for ApnsHandler {
                     CALLBACKS_INFLIGHT.dec();
 
                     match result {
-                        Ok(response) =>
-                            producer.handle_ok(event, response),
-                        Err(Error::ResponseError(e)) =>
-                            producer.handle_err(event, e),
-                        Err(e) =>
-                            producer.handle_fatal(event, e),
+                        Ok(response) => producer.handle_ok(event, response),
+                        Err(Error::ResponseError(e)) => producer.handle_err(event, e),
+                        Err(e) => producer.handle_fatal(event, e),
                     }
                 })
                 .then(|_| ok(()));
@@ -95,71 +119,37 @@ impl EventHandler for ApnsHandler {
                 info!("Deleted notifier for application #{}", application_id);
             };
 
-            return
+            return;
         }
 
         let ios_config = application.get_ios();
 
         let endpoint = match ios_config.get_endpoint() {
             Production => Endpoint::Production,
-            Sandbox    => Endpoint::Sandbox,
+            Sandbox => Endpoint::Sandbox,
         };
 
-        if ios_config.has_token() {
-            let token = ios_config.get_token();
-            let mut pkcs8 = token.get_pkcs8().clone();
-
-            let notifier_result = Notifier::token(
-                &mut pkcs8,
-                token.get_key_id(),
-                token.get_team_id(),
+        let result = if ios_config.has_token() {
+            self.add_token_notifier(
+                ios_config.get_token(),
                 endpoint,
+                application_id,
                 ios_config.get_apns_topic(),
-            );
-
-            match notifier_result {
-                Ok(notifier) => {
-                    self.notifiers.insert(
-                        application_id.to_string(),
-                        notifier
-                    );
-                },
-                Err(error) => {
-                    error!(
-                        "Error creating a notifier for application #{}: {:?}",
-                        application_id,
-                        error
-                    );
-                }
-            }
-        } else if ios_config.has_certificate() {
-            let certificate = ios_config.get_certificate();
-            let mut pkcs12 = certificate.get_pkcs12().clone();
-
-            let notifier_result = Notifier::certificate(
-                &mut pkcs12,
-                certificate.get_password(),
-                endpoint,
-                ios_config.get_apns_topic(),
-            );
-
-            match notifier_result {
-                Ok(notifier) => {
-                    self.notifiers.insert(
-                        application_id.to_string(),
-                        notifier
-                    );
-                },
-                Err(error) => {
-                    error!(
-                        "Error creating a notifier for application #{}: {:?}",
-                        application_id,
-                        error
-                    );
-                }
-            }
+            )
         } else {
-            error!("Unsupported iOS application type");
-        }
+            self.add_certificate_notifier(
+                ios_config.get_certificate(),
+                endpoint,
+                application_id,
+                ios_config.get_apns_topic(),
+            )
+        };
+
+        if let Err(error) = result {
+            error!(
+                "Error creating a notifier for application #{}: {:?}",
+                application_id, error
+            )
+        };
     }
 }

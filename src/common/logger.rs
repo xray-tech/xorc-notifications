@@ -1,8 +1,8 @@
-use log::LevelFilter;
-use gelf::{Error, Logger, Message, UdpBackend, Level};
-use std::env;
 use env_logger;
 use events::application::Application;
+use gelf::{Error, Level, Logger, Message, UdpBackend};
+use log::LevelFilter;
+use std::env;
 
 #[derive(Deserialize, Debug)]
 pub struct Config {
@@ -38,34 +38,16 @@ impl GelfLogger {
             let mut logger = Logger::new(Box::new(UdpBackend::new(host)?))?;
             let mut env_logger = Logger::new(Box::new(UdpBackend::new(host)?))?;
 
-            logger.set_default_metadata(
-                "application_name",
-                application_name
-            );
+            logger.set_default_metadata("application_name", application_name);
 
-            env_logger.set_default_metadata(
-                "application_name",
-                application_name
-            );
+            env_logger.set_default_metadata("application_name", application_name);
 
             if let Ok(environment) = env::var("RUST_ENV") {
-                logger.set_default_metadata(
-                    "environment",
-                    environment.clone(),
-                );
-                env_logger.set_default_metadata(
-                    "environment",
-                    environment.clone(),
-                );
+                logger.set_default_metadata("environment", environment.clone());
+                env_logger.set_default_metadata("environment", environment.clone());
             } else {
-                logger.set_default_metadata(
-                    "environment",
-                    "development"
-                );
-                env_logger.set_default_metadata(
-                    "environment",
-                    "development"
-                );
+                logger.set_default_metadata("environment", "development");
+                env_logger.set_default_metadata("environment", "development");
             };
 
             let filter = match env::var("RUST_LOG") {
@@ -100,7 +82,9 @@ impl GelfLogger {
             Some(ref connection) => connection.log_message(msg),
             None => {
                 let level = match msg.level() {
-                    Level::Emergency | Level::Alert | Level::Critical | Level::Error => LevelFilter::Error,
+                    Level::Emergency | Level::Alert | Level::Critical | Level::Error => {
+                        LevelFilter::Error
+                    }
                     Level::Warning => LevelFilter::Warn,
                     Level::Notice | Level::Informational => LevelFilter::Info,
                     Level::Debug => LevelFilter::Debug,
@@ -121,12 +105,7 @@ impl GelfLogger {
         }
     }
 
-    pub fn log_config_change(
-        &self,
-        title: &str,
-        application: &Application,
-    ) -> Result<(), Error>
-    {
+    pub fn log_config_change(&self, title: &str, application: &Application) -> Result<(), Error> {
         let mut test_msg = Message::new(title);
 
         test_msg.set_metadata("app_id", application.get_id())?;

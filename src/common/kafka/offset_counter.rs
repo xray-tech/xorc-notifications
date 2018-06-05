@@ -1,15 +1,6 @@
-use rdkafka::{
-    message::BorrowedMessage,
-    consumer::{
-        stream_consumer::StreamConsumer,
-        Consumer
-    },
-};
+use rdkafka::{consumer::{Consumer, stream_consumer::StreamConsumer}, message::BorrowedMessage};
 
-use std::{
-    time::SystemTime,
-    io,
-};
+use std::{io, time::SystemTime};
 
 pub struct OffsetCounter<'a> {
     consumer: &'a StreamConsumer,
@@ -33,18 +24,18 @@ impl<'a> OffsetCounter<'a> {
     /// Stores offset every 10 seconds or 500 events.
     pub fn try_store_offset(&mut self, msg: &BorrowedMessage) -> Result<(), io::Error> {
         let should_commit = match self.time.elapsed() {
-            Ok(elapsed) if elapsed.as_secs() > 10 || self.counter >= 500 =>
-                true,
-            Err(_) => {
-                true
-            },
+            Ok(elapsed) if elapsed.as_secs() > 10 || self.counter >= 500 => true,
+            Err(_) => true,
             _ => false,
         };
 
         if should_commit {
             self.store_offset(msg)
         } else {
-            Err(io::Error::new(io::ErrorKind::Other, "No time to save the offset"))
+            Err(io::Error::new(
+                io::ErrorKind::Other,
+                "No time to save the offset",
+            ))
         }
     }
 
@@ -52,12 +43,9 @@ impl<'a> OffsetCounter<'a> {
     pub fn store_offset(&mut self, msg: &BorrowedMessage) -> Result<(), io::Error> {
         match self.consumer.store_offset(msg) {
             Err(kafka_error) => {
-                error!(
-                    "Couldn't store offset: {:?}",
-                    kafka_error,
-                );
+                error!("Couldn't store offset: {:?}", kafka_error,);
                 Err(io::Error::new(io::ErrorKind::Other, "Couldn't save offset"))
-            },
+            }
             Ok(_) => {
                 self.counter = 0;
                 self.time = SystemTime::now();
@@ -67,4 +55,3 @@ impl<'a> OffsetCounter<'a> {
         }
     }
 }
-

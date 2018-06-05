@@ -1,24 +1,18 @@
 use a2::response::ErrorReason as ApnsReason;
 use web_push::WebPushError;
 
-use self::{
-    webpush_notification::WebPushResult_Error,
-    apple_notification::{
-        ApnsResult_Reason,
-        ApnsResult_Reason::*,
-        ApnsResult_Status,
-        ApnsResult_Status::*,
-    },
-};
+use self::{apple_notification::{ApnsResult_Reason, ApnsResult_Reason::*, ApnsResult_Status,
+                                ApnsResult_Status::*},
+           webpush_notification::WebPushResult_Error};
 
-pub mod push_notification;
 pub mod apple_notification;
-pub mod google_notification;
-pub mod webpush_notification;
-pub mod push_result;
-pub mod map_field_entry;
-pub mod header;
 pub mod application;
+pub mod google_notification;
+pub mod header;
+pub mod map_field_entry;
+pub mod push_notification;
+pub mod push_result;
+pub mod webpush_notification;
 
 impl From<u16> for ApnsResult_Status {
     fn from(status: u16) -> ApnsResult_Status {
@@ -67,25 +61,25 @@ impl<'a> From<&'a ApnsReason> for ApnsResult_Reason {
 impl<'a> From<&'a WebPushError> for WebPushResult_Error {
     fn from(e: &'a WebPushError) -> WebPushResult_Error {
         match *e {
-            WebPushError::Unspecified        => WebPushResult_Error::Unspecified,
-            WebPushError::Unauthorized       => WebPushResult_Error::Unauthorized,
-            WebPushError::BadRequest(_)      => WebPushResult_Error::BadRequest,
-            WebPushError::ServerError(_)     => WebPushResult_Error::ServerError,
-            WebPushError::NotImplemented     => WebPushResult_Error::NotImplemented,
-            WebPushError::InvalidUri         => WebPushResult_Error::InvalidUri,
-            WebPushError::TimeoutError       => WebPushResult_Error::TimeoutError,
-            WebPushError::EndpointNotValid   => WebPushResult_Error::EndpointNotValid,
-            WebPushError::EndpointNotFound   => WebPushResult_Error::EndpointNotFound,
-            WebPushError::PayloadTooLarge    => WebPushResult_Error::PayloadTooLarge,
-            WebPushError::TlsError           => WebPushResult_Error::TlsError,
+            WebPushError::Unspecified => WebPushResult_Error::Unspecified,
+            WebPushError::Unauthorized => WebPushResult_Error::Unauthorized,
+            WebPushError::BadRequest(_) => WebPushResult_Error::BadRequest,
+            WebPushError::ServerError(_) => WebPushResult_Error::ServerError,
+            WebPushError::NotImplemented => WebPushResult_Error::NotImplemented,
+            WebPushError::InvalidUri => WebPushResult_Error::InvalidUri,
+            WebPushError::TimeoutError => WebPushResult_Error::TimeoutError,
+            WebPushError::EndpointNotValid => WebPushResult_Error::EndpointNotValid,
+            WebPushError::EndpointNotFound => WebPushResult_Error::EndpointNotFound,
+            WebPushError::PayloadTooLarge => WebPushResult_Error::PayloadTooLarge,
+            WebPushError::TlsError => WebPushResult_Error::TlsError,
             WebPushError::InvalidPackageName => WebPushResult_Error::InvalidPackageName,
-            WebPushError::InvalidTtl         => WebPushResult_Error::InvalidTtl,
-            WebPushError::MissingCryptoKeys  => WebPushResult_Error::MissingCryptoKeys,
-            WebPushError::InvalidCryptoKeys  => WebPushResult_Error::InvalidCryptoKeys,
-            WebPushError::InvalidResponse    => WebPushResult_Error::InvalidResponse,
-            WebPushError::SslError           => WebPushResult_Error::Other,
-            WebPushError::IoError            => WebPushResult_Error::Other,
-            WebPushError::Other(_)           => WebPushResult_Error::Other,
+            WebPushError::InvalidTtl => WebPushResult_Error::InvalidTtl,
+            WebPushError::MissingCryptoKeys => WebPushResult_Error::MissingCryptoKeys,
+            WebPushError::InvalidCryptoKeys => WebPushResult_Error::InvalidCryptoKeys,
+            WebPushError::InvalidResponse => WebPushResult_Error::InvalidResponse,
+            WebPushError::SslError => WebPushResult_Error::Other,
+            WebPushError::IoError => WebPushResult_Error::Other,
+            WebPushError::Other(_) => WebPushResult_Error::Other,
         }
     }
 }
@@ -93,5 +87,5 @@ impl<'a> From<&'a WebPushError> for WebPushResult_Error {
 pub enum ResponseAction {
     None,
     UnsubscribeEntity,
-    Retry
+    Retry,
 }

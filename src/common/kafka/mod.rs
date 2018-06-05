@@ -2,7 +2,7 @@ mod offset_counter;
 mod push_consumer;
 mod response_producer;
 
-pub use self::push_consumer::{PushConsumer, EventHandler};
+pub use self::push_consumer::{EventHandler, PushConsumer};
 pub use self::response_producer::ResponseProducer;
 pub use rdkafka::producer::DeliveryFuture;
 
@@ -14,4 +14,3 @@ pub struct Config {
     pub group_id: String,
     pub brokers: String,
 }
-

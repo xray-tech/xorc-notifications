@@ -1,9 +1,5 @@
-use common::{
-    events::{
-        push_notification::PushNotification,
-        google_notification::GoogleNotification_Priority,
-    },
-};
+use common::events::{google_notification::GoogleNotification_Priority,
+                     push_notification::PushNotification};
 
 use fcm::*;
 use std::collections::HashMap;
@@ -19,33 +15,48 @@ impl Notifier {
         }
     }
 
-    pub fn notify(
-        &self,
-        event: &PushNotification,
-        api_key: &str,
-    ) -> FutureResponse
-    {
+    pub fn notify(&self, event: &PushNotification, api_key: &str) -> FutureResponse {
         self.client.send(Self::gen_payload(event, api_key))
     }
 
     fn gen_payload<'a>(pn: &'a PushNotification, api_key: &'a str) -> Message<'a> {
         let notification = pn.get_google();
-        let mut message  = MessageBuilder::new(api_key, pn.get_device_token());
+        let mut message = MessageBuilder::new(api_key, pn.get_device_token());
 
         if notification.has_localized() {
-            let localized   = notification.get_localized();
+            let localized = notification.get_localized();
             let mut builder = NotificationBuilder::new();
 
-            if localized.has_title()         { builder.title(localized.get_title());                 }
-            if localized.has_tag()           { builder.tag(localized.get_tag());                     }
-            if localized.has_body()          { builder.body(localized.get_body());                   }
-            if localized.has_icon()          { builder.icon(localized.get_icon());                   }
-            if localized.has_sound()         { builder.sound(localized.get_sound());                 }
-            if localized.has_badge()         { builder.badge(localized.get_badge());                 }
-            if localized.has_color()         { builder.color(localized.get_color());                 }
-            if localized.has_click_action()  { builder.click_action(localized.get_click_action());   }
-            if localized.has_body_loc_key()  { builder.body_loc_key(localized.get_body_loc_key());   }
-            if localized.has_title_loc_key() { builder.title_loc_key(localized.get_title_loc_key()); }
+            if localized.has_title() {
+                builder.title(localized.get_title());
+            }
+            if localized.has_tag() {
+                builder.tag(localized.get_tag());
+            }
+            if localized.has_body() {
+                builder.body(localized.get_body());
+            }
+            if localized.has_icon() {
+                builder.icon(localized.get_icon());
+            }
+            if localized.has_sound() {
+                builder.sound(localized.get_sound());
+            }
+            if localized.has_badge() {
+                builder.badge(localized.get_badge());
+            }
+            if localized.has_color() {
+                builder.color(localized.get_color());
+            }
+            if localized.has_click_action() {
+                builder.click_action(localized.get_click_action());
+            }
+            if localized.has_body_loc_key() {
+                builder.body_loc_key(localized.get_body_loc_key());
+            }
+            if localized.has_title_loc_key() {
+                builder.title_loc_key(localized.get_title_loc_key());
+            }
 
             if localized.get_title_loc_args().len() > 0 {
                 builder.title_loc_args(localized.get_title_loc_args());
@@ -66,7 +77,6 @@ impl Notifier {
                 }
             }
             message.notification(builder.finalize());
-
         } else {
             let key_values = notification.get_message().get_data().iter();
 
@@ -91,7 +101,7 @@ impl Notifier {
         match notification.get_priority() {
             GoogleNotification_Priority::Normal => {
                 message.priority(Priority::Normal);
-            },
+            }
             GoogleNotification_Priority::High => {
                 message.priority(Priority::High);
             }

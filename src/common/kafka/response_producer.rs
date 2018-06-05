@@ -1,22 +1,13 @@
-use rdkafka::{
-    config::ClientConfig,
-    producer::{FutureProducer, DeliveryFuture},
-};
+use rdkafka::{config::ClientConfig, producer::{DeliveryFuture, FutureProducer}};
 
-use kafka::{
-    Config,
-};
+use kafka::Config;
 
-use events::{
-    ResponseAction,
-    push_notification::PushNotification,
-    push_result::PushResult,
-    header::Header,
-};
+use events::{ResponseAction, header::Header, push_notification::PushNotification,
+             push_result::PushResult};
 
 use chrono::offset::Utc;
-use std::sync::Arc;
 use protobuf::Message;
+use std::sync::Arc;
 
 struct Kafka {
     output_topic: String,
@@ -37,7 +28,7 @@ impl ResponseProducer {
 
         let kafka = Arc::new(Kafka {
             output_topic: config.output_topic.clone(),
-            producer: producer
+            producer: producer,
         });
 
         ResponseProducer { kafka }
@@ -55,9 +46,8 @@ impl ResponseProducer {
     pub fn publish(
         &self,
         event: PushNotification,
-        response_action: ResponseAction
-    ) -> DeliveryFuture
-    {
+        response_action: ResponseAction,
+    ) -> DeliveryFuture {
         let mut result_event = PushResult::new();
 
         let mut header = Header::new();
@@ -69,22 +59,19 @@ impl ResponseProducer {
         result_event.set_header(header);
 
         match response_action {
-            ResponseAction::None =>
-               result_event.set_none(true),
-            ResponseAction::UnsubscribeEntity =>
-                result_event.set_unsubscribe_entity(true),
-            ResponseAction::Retry =>
-                result_event.set_retry_in(Self::get_retry_after(&event)),
+            ResponseAction::None => result_event.set_none(true),
+            ResponseAction::UnsubscribeEntity => result_event.set_unsubscribe_entity(true),
+            ResponseAction::Retry => result_event.set_retry_in(Self::get_retry_after(&event)),
         }
 
         result_event.set_notification(event);
 
         self.kafka.producer.send_copy::<Vec<u8>, str>(
             &self.kafka.output_topic,
-            None, // topic
-            Some(&result_event.write_to_bytes().unwrap()), // payload
+            None,                                               // topic
+            Some(&result_event.write_to_bytes().unwrap()),      // payload
             Some(result_event.get_header().get_recipient_id()), // key
-            None, // timestamp
+            None,                                               // timestamp
             1000, // block in milliseconds if the queue is full,
         )
     }

@@ -1,29 +1,20 @@
-use metrics::StatisticsServer;
-use kafka::PushConsumer;
+use argparse::{ArgumentParser, Store};
+use chan_signal::{notify, Signal};
 use config::Config;
 use kafka::EventHandler;
-use chan_signal::{notify, Signal};
-use argparse::{ArgumentParser, Store};
+use kafka::PushConsumer;
+use metrics::StatisticsServer;
 
-use std::{
-    thread,
-    thread::JoinHandle,
-};
+use std::{thread, thread::JoinHandle};
 
-use futures::{
-    sync::oneshot,
-};
+use futures::sync::oneshot;
 
 pub struct System;
 
 impl System {
-    pub fn start<H>(
-        name: &str,
-        handler: H,
-        config: &Config
-    )
+    pub fn start<H>(name: &str, handler: H, config: &Config)
     where
-        H: EventHandler + Send + 'static
+        H: EventHandler + Send + 'static,
     {
         let exit_signal = notify(&[Signal::INT, Signal::TERM]);
         let (server_tx, server_rx) = oneshot::channel();
@@ -46,11 +37,7 @@ impl System {
         let mut threads: Vec<JoinHandle<_>> = Vec::new();
 
         threads.push({
-            let mut consumer = PushConsumer::new(
-                handler,
-                &config.kafka,
-                consumer_partition,
-            );
+            let mut consumer = PushConsumer::new(handler, &config.kafka, consumer_partition);
 
             thread::spawn(move || {
                 debug!("Starting consumer...");

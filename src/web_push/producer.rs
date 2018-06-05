@@ -1,31 +1,13 @@
-use common::{
-    events::{
-        push_notification::PushNotification,
-        webpush_notification::WebPushResult,
-        ResponseAction,
-    },
-    metrics::{
-        CALLBACKS_COUNTER,
-    },
-    kafka::{
-        ResponseProducer,
-        DeliveryFuture,
-    },
-};
+use common::{events::{ResponseAction, push_notification::PushNotification,
+                      webpush_notification::WebPushResult},
+             kafka::{DeliveryFuture, ResponseProducer}, metrics::CALLBACKS_COUNTER};
 
-use gelf::{
-    Message as GelfMessage,
-    Error as GelfError,
-    Level as GelfLevel
-};
+use gelf::{Error as GelfError, Level as GelfLevel, Message as GelfMessage};
 
-use ::{
-    GLOG,
-    CONFIG,
-};
+use {CONFIG, GLOG};
 
-use web_push::*;
 use hyper::Uri;
+use web_push::*;
 
 pub struct WebPushProducer {
     producer: ResponseProducer,
@@ -38,11 +20,7 @@ impl WebPushProducer {
         }
     }
 
-    pub fn handle_ok(
-        &self,
-        mut event: PushNotification
-    ) -> DeliveryFuture
-    {
+    pub fn handle_ok(&self, mut event: PushNotification) -> DeliveryFuture {
         CALLBACKS_COUNTER.with_label_values(&["success"]).inc();
 
         let _ = self.log_push_result("Successfully sent a push notification", &event, None);
@@ -54,13 +32,11 @@ impl WebPushProducer {
         self.producer.publish(event, ResponseAction::None)
     }
 
-    pub fn handle_no_cert(
-        &self,
-        mut event: PushNotification,
-    ) -> DeliveryFuture
-    {
+    pub fn handle_no_cert(&self, mut event: PushNotification) -> DeliveryFuture {
         error!("Certificate missing for event: '{:?}'", event);
-        CALLBACKS_COUNTER.with_label_values(&["certificate_missing"]).inc();
+        CALLBACKS_COUNTER
+            .with_label_values(&["certificate_missing"])
+            .inc();
 
         let mut web_result = WebPushResult::new();
 
@@ -70,12 +46,7 @@ impl WebPushProducer {
         self.producer.publish(event, ResponseAction::Retry)
     }
 
-    pub fn handle_error(
-        &self,
-        mut event: PushNotification,
-        error: WebPushError,
-    ) -> DeliveryFuture
-    {
+    pub fn handle_error(&self, mut event: PushNotification, error: WebPushError) -> DeliveryFuture {
         let _ = self.log_push_result("Error sending a push notification", &event, Some(&error));
 
         let mut web_result = WebPushResult::new();
@@ -85,21 +56,17 @@ impl WebPushProducer {
 
         event.mut_web().set_response(web_result);
 
-        CALLBACKS_COUNTER.with_label_values(&[error.short_description()]).inc();
+        CALLBACKS_COUNTER
+            .with_label_values(&[error.short_description()])
+            .inc();
 
         let response_action = match error {
-            WebPushError::ServerError(_) => {
-                ResponseAction::Retry
-            },
-            WebPushError::TimeoutError => {
-                ResponseAction::Retry
-            },
+            WebPushError::ServerError(_) => ResponseAction::Retry,
+            WebPushError::TimeoutError => ResponseAction::Retry,
             WebPushError::EndpointNotValid | WebPushError::EndpointNotFound => {
                 ResponseAction::UnsubscribeEntity
             }
-            _ => {
-                ResponseAction::None
-            },
+            _ => ResponseAction::None,
         };
 
         self.producer.publish(event, response_action)
@@ -109,18 +76,21 @@ impl WebPushProducer {
         &self,
         title: &str,
         event: &PushNotification,
-        error: Option<&WebPushError>
-    ) -> Result<(), GelfError>
-    {
+        error: Option<&WebPushError>,
+    ) -> Result<(), GelfError> {
         let mut test_msg = GelfMessage::new(String::from(title));
 
-        test_msg.set_full_message(format!("{:?}", event)).
-            set_level(GelfLevel::Informational).
-            set_metadata("correlation_id", format!("{}", event.get_correlation_id()))?.
-            set_metadata("device_token",   format!("{}", event.get_device_token()))?.
-            set_metadata("app_id",         format!("{}", event.get_application_id()))?.
-            set_metadata("campaign_id",    format!("{}", event.get_campaign_id()))?.
-            set_metadata("event_source",   String::from(event.get_header().get_source()))?;
+        test_msg
+            .set_full_message(format!("{:?}", event))
+            .set_level(GelfLevel::Informational)
+            .set_metadata("correlation_id", format!("{}", event.get_correlation_id()))?
+            .set_metadata("device_token", format!("{}", event.get_device_token()))?
+            .set_metadata("app_id", format!("{}", event.get_application_id()))?
+            .set_metadata("campaign_id", format!("{}", event.get_campaign_id()))?
+            .set_metadata(
+                "event_source",
+                String::from(event.get_header().get_source()),
+            )?;
 
         if let Ok(uri) = event.get_device_token().parse::<Uri>() {
             if let Some(host) = uri.host() {
@@ -137,7 +107,7 @@ impl WebPushProducer {
             Some(error_msg) => {
                 test_msg.set_metadata("successful", String::from("false"))?;
                 test_msg.set_metadata("error", format!("{:?}", error_msg))?;
-            },
+            }
             _ => {
                 test_msg.set_metadata("successful", String::from("true"))?;
             }

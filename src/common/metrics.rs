@@ -1,20 +1,10 @@
+use http::header;
 use prometheus::{self, CounterVec, Encoder, Gauge, Histogram, TextEncoder};
 use std::env;
-use http::header;
 
-use hyper::{
-    rt,
-    Body,
-    Request,
-    Response,
-    Server,
-    service::service_fn_ok,
-};
+use hyper::{rt, Body, Request, Response, Server, service::service_fn_ok};
 
-use futures::{
-    sync::oneshot::Receiver,
-    Future,
-};
+use futures::{Future, sync::oneshot::Receiver};
 
 lazy_static! {
     pub static ref CALLBACKS_COUNTER: CounterVec = register_counter_vec!(
@@ -22,22 +12,18 @@ lazy_static! {
         "Total number of push notifications responded.",
         &["status"]
     ).unwrap();
-
     pub static ref CALLBACKS_INFLIGHT: Gauge = register_gauge!(
         "push_notifications_in_flight",
         "Number of push notifications in flight"
     ).unwrap();
-
     pub static ref RESPONSE_TIMES_HISTOGRAM: Histogram = register_histogram!(
         "http_request_latency_seconds",
         "The HTTP request latencies in seconds"
     ).unwrap();
-
     pub static ref TOKEN_CONSUMERS: Gauge = register_gauge!(
         "apns_token_consumers",
         "Number of token-based consumers to Apple push notification service"
     ).unwrap();
-
     pub static ref CERTIFICATE_CONSUMERS: Gauge = register_gauge!(
         "apns_certificate_consumers",
         "Number of certificate-based consumers to Apple push notification service"
@@ -49,20 +35,14 @@ pub struct StatisticsServer;
 
 impl StatisticsServer {
     fn prometheus(_: Request<Body>) -> Response<Body> {
-        let encoder         = TextEncoder::new();
+        let encoder = TextEncoder::new();
         let metric_families = prometheus::gather();
-        let mut buffer      = vec![];
-        let mut builder     = Response::builder();
+        let mut buffer = vec![];
+        let mut builder = Response::builder();
 
-        encoder.encode(
-            &metric_families,
-            &mut buffer
-        ).unwrap();
+        encoder.encode(&metric_families, &mut buffer).unwrap();
 
-        builder.header(
-            header::CONTENT_TYPE,
-            encoder.format_type()
-        );
+        builder.header(header::CONTENT_TYPE, encoder.format_type());
 
         builder.body(buffer.into()).unwrap()
     }

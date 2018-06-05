@@ -1,19 +1,13 @@
-use common::metrics::*;
 use common::events::push_notification::PushNotification;
-use serde_json::{self, Value};
+use common::metrics::*;
 use serde_json::error::Error as JsonError;
+use serde_json::{self, Value};
 use std::io::Read;
 use std::time::Duration;
 use tokio_timer::Timeout;
 
-use a2::{
-    request::{
-        notification::*,
-        payload::Payload,
-    },
-    error::Error,
-    client::{FutureResponse, Client, Endpoint},
-};
+use a2::{client::{Client, Endpoint, FutureResponse}, error::Error,
+         request::{notification::*, payload::Payload}};
 
 enum NotifierType {
     Token,
@@ -31,7 +25,7 @@ impl Drop for Notifier {
         match self.notifier_type {
             NotifierType::Token => {
                 TOKEN_CONSUMERS.dec();
-            },
+            }
             NotifierType::Certificate => {
                 CERTIFICATE_CONSUMERS.dec();
             }
@@ -46,7 +40,8 @@ impl Notifier {
         endpoint: Endpoint,
         topic: &str,
     ) -> Result<Notifier, Error>
-    where R: Read
+    where
+        R: Read,
     {
         let client = Client::certificate(pkcs12, password, endpoint)?;
         let notifier_type = NotifierType::Certificate;
@@ -55,7 +50,7 @@ impl Notifier {
         Ok(Notifier {
             client,
             topic: String::from(topic),
-            notifier_type
+            notifier_type,
         })
     }
 
@@ -66,7 +61,8 @@ impl Notifier {
         endpoint: Endpoint,
         topic: &str,
     ) -> Result<Notifier, Error>
-    where R: Read
+    where
+        R: Read,
     {
         let client = Client::token(pkcs8, key_id, team_id, endpoint)?;
         let notifier_type = NotifierType::Token;
@@ -75,19 +71,16 @@ impl Notifier {
         Ok(Notifier {
             client,
             topic: String::from(topic),
-            notifier_type
+            notifier_type,
         })
     }
 
     pub fn notify(&self, event: &PushNotification) -> Timeout<FutureResponse> {
-        self.client.send_with_timeout(self.gen_payload(event), Duration::from_secs(3))
+        self.client
+            .send_with_timeout(self.gen_payload(event), Duration::from_secs(3))
     }
 
-    fn gen_payload<'a>(
-        &'a self,
-        event: &'a PushNotification
-    ) -> Payload<'a>
-    {
+    fn gen_payload<'a>(&'a self, event: &'a PushNotification) -> Payload<'a> {
         let notification_data = event.get_apple();
         let headers = notification_data.get_headers();
 
