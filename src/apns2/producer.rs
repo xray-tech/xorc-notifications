@@ -19,10 +19,12 @@ use common::{
         push_notification::PushNotification,
         ResponseAction,
     },
-    kafka::ResponseProducer,
+    kafka::{
+        ResponseProducer,
+        DeliveryFuture,
+    },
 };
 
-use rdkafka::producer::DeliveryFuture;
 use heck::SnakeCase;
 use ::{GLOG, CONFIG};
 

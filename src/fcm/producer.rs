@@ -8,7 +8,10 @@ use common::{
     metrics::{
         CALLBACKS_COUNTER,
     },
-    kafka::ResponseProducer,
+    kafka::{
+        ResponseProducer,
+        DeliveryFuture,
+    },
 };
 
 
@@ -26,7 +29,7 @@ use gelf::{
 };
 
 use ::{GLOG, CONFIG};
-use rdkafka::producer::DeliveryFuture;
+
 pub struct FcmProducer {
     producer: ResponseProducer,
 }

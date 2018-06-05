@@ -7,7 +7,10 @@ use common::{
     metrics::{
         CALLBACKS_COUNTER,
     },
-    kafka::ResponseProducer,
+    kafka::{
+        ResponseProducer,
+        DeliveryFuture,
+    },
 };
 
 use gelf::{
@@ -23,7 +26,6 @@ use ::{
 
 use web_push::*;
 use hyper::Uri;
-use rdkafka::producer::DeliveryFuture;
 
 pub struct WebPushProducer {
     producer: ResponseProducer,

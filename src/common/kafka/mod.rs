@@ -4,6 +4,7 @@ mod response_producer;
 
 pub use self::push_consumer::{PushConsumer, EventHandler};
 pub use self::response_producer::ResponseProducer;
+pub use rdkafka::producer::DeliveryFuture;
 
 #[derive(Deserialize, Debug)]
 pub struct Config {

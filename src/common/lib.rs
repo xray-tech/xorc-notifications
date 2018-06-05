@@ -1,4 +1,6 @@
 #[macro_use]
+extern crate chan;
+#[macro_use]
 extern crate lazy_static;
 #[macro_use]
 extern crate prometheus;
@@ -7,6 +9,8 @@ extern crate log;
 #[macro_use]
 extern crate serde_derive;
 
+extern crate argparse;
+extern crate chan_signal;
 extern crate serde;
 extern crate protobuf;
 extern crate gelf;
@@ -27,3 +31,4 @@ pub mod logger;
 pub mod metrics;
 pub mod kafka;
 pub mod config;
+pub mod system;
