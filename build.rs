@@ -5,6 +5,7 @@ fn main() {
         out_dir: "src/common/events",
         input: &[
             "third_party/events/schema/common/header.proto",
+            "third_party/events/schema/common/header_decoder.proto",
             "third_party/events/schema/common/map_field_entry.proto",
             "third_party/events/schema/crm/application.proto",
             "third_party/events/schema/notification/push_notification.proto",

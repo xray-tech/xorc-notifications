@@ -1,13 +1,13 @@
 use rdkafka::{Message, config::ClientConfig,
               consumer::{CommitMode, Consumer, stream_consumer::StreamConsumer},
               topic_partition_list::{Offset, TopicPartitionList}};
-
 use std::collections::HashMap;
-
 use kafka::{Config, offset_counter::OffsetCounter};
-
-use events::{application::Application, push_notification::PushNotification};
-
+use events::{
+    application::Application,
+    push_notification::PushNotification,
+    header_decoder::HeaderWrapper,
+};
 use futures::{Future, Stream, sync::oneshot};
 use protobuf::parse_from_bytes;
 use tokio_core::reactor::Core;
@@ -102,14 +102,23 @@ impl<H: EventHandler> PushConsumer<H> {
                     }
                     t if t == self.config_topic => {
                         let event_parsing = msg.payload()
-                            .and_then(|payload| parse_from_bytes::<Application>(payload).ok());
+                            .and_then(|payload| parse_from_bytes::<HeaderWrapper>(&payload).ok());
 
                         match event_parsing {
-                            Some(event) => {
-                                self.handler.handle_config(event);
+                            Some(ref decoder) if decoder.get_header().get_field_type() == "crm.Application" => {
+                                let event_parsing = msg.payload()
+                                    .and_then(|payload| parse_from_bytes::<Application>(&payload).ok());
+
+                                match event_parsing {
+                                    Some(event) =>
+                                        self.handler.handle_config(event),
+                                    None =>
+                                        error!("Error parsing protobuf event")
+                                }
+
                             }
-                            None => {
-                                error!("Error parsing notification protobuf");
+                            _ => {
+                                debug!("Not an application we have over here...");
                             }
                         }
                     }

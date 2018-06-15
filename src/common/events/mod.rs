@@ -9,6 +9,7 @@ pub mod apple_notification;
 pub mod application;
 pub mod google_notification;
 pub mod header;
+pub mod header_decoder;
 pub mod map_field_entry;
 pub mod push_notification;
 pub mod push_result;
