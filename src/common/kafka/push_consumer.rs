@@ -10,7 +10,7 @@ use events::{
 };
 use futures::{Future, Stream, sync::oneshot};
 use protobuf::parse_from_bytes;
-use tokio_core::reactor::Core;
+use tokio::{self, executor::current_thread::CurrentThread};
 
 pub trait EventHandler {
     fn handle_notification(
@@ -46,8 +46,7 @@ impl<H: EventHandler> PushConsumer<H> {
 
     /// Consume until event is sent through `control`.
     pub fn consume(&mut self, control: oneshot::Receiver<()>) -> Result<(), ()> {
-        let mut core = Core::new().unwrap();
-        let handle = core.handle();
+        let mut core = CurrentThread::new();
 
         let consumer: StreamConsumer = ClientConfig::new()
             .set("group.id", &self.group_id)
@@ -93,7 +92,7 @@ impl<H: EventHandler> PushConsumer<H> {
                         match event_parsing {
                             Some(event) => {
                                 let notification_handling = self.handler.handle_notification(event);
-                                handle.spawn(notification_handling);
+                                tokio::spawn(notification_handling);
                             }
                             None => {
                                 error!("Error parsing notification protobuf");
@@ -128,13 +127,9 @@ impl<H: EventHandler> PushConsumer<H> {
                 }
 
                 Ok(())
-            });
+            }).select2(control).then(|_| consumer.commit_consumer_state(CommitMode::Sync));
 
-        let _ = core.run(
-            processed_stream
-                .select2(control)
-                .then(|_| consumer.commit_consumer_state(CommitMode::Sync)),
-        );
+        let _ = core.block_on(processed_stream);
 
         Ok(())
     }

@@ -22,7 +22,7 @@ extern crate hyper;
 extern crate protobuf;
 extern crate rdkafka;
 extern crate serde;
-extern crate tokio_core;
+extern crate tokio;
 extern crate toml;
 extern crate web_push;
 
