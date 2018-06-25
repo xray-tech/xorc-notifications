@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use common::{events::{application::Application, push_notification::PushNotification},
+use common::{events::{crm::Application, push_notification::PushNotification},
              kafka::EventHandler, metrics::*};
 
 use futures::{Future, future::ok};
@@ -68,7 +68,7 @@ impl EventHandler for WebPushHandler {
         let application_id = application.get_id();
         let _ = GLOG.log_config_change("Push config update", &application);
 
-        if !application.has_web() {
+        if !application.has_web_config() {
             if let Some(_) = self.fcm_api_keys.remove(application_id) {
                 info!("Deleted notifier for application #{}", application_id);
             };
@@ -76,14 +76,17 @@ impl EventHandler for WebPushHandler {
             return;
         }
 
-        let web_app = application.get_web();
+        let web_app = application.get_web_config();
 
-        if web_app.has_fcm_api_key() {
+        if web_app.has_fcm_config() {
+            let api_key = web_app
+                .get_fcm_config()
+                .get_fcm_api_key()
+                .to_string();
+
             self.fcm_api_keys.insert(
                 String::from(application_id),
-                ApiKey {
-                    fcm_api_key: Some(web_app.get_fcm_api_key().to_string()),
-                },
+                ApiKey { fcm_api_key: Some(api_key), },
             );
         } else {
             self.fcm_api_keys

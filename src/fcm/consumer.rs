@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use common::{events::{application::Application, push_notification::PushNotification},
+use common::{events::{crm::Application, push_notification::PushNotification},
              kafka::EventHandler, metrics::*};
 
 use futures::{Future, future::ok};
@@ -65,7 +65,7 @@ impl EventHandler for FcmHandler {
 
         let _ = GLOG.log_config_change("Push config update", &application);
 
-        if !application.has_android() {
+        if !application.has_android_config() {
             if let Some(_) = self.api_keys.remove(application_id) {
                 info!("Deleted notifier for application #{}", application_id);
             };
@@ -73,15 +73,14 @@ impl EventHandler for FcmHandler {
             return;
         }
 
-        let android_app = application.get_android();
+        let api_key = application
+            .get_android_config()
+            .get_fcm_config()
+            .get_fcm_api_key();
 
-        if android_app.has_fcm_api_key() {
-            self.api_keys.insert(
-                String::from(application_id),
-                String::from(android_app.get_fcm_api_key()),
-            );
-        } else {
-            self.api_keys.remove(application_id);
-        }
+        self.api_keys.insert(
+            String::from(application_id),
+            String::from(api_key),
+        );
     }
 }

@@ -1,5 +1,5 @@
 use env_logger;
-use events::application::Application;
+use events::crm::Application;
 use gelf::{Error, Level, Logger, Message, UdpBackend};
 use log::LevelFilter;
 use std::env;
@@ -110,8 +110,8 @@ impl GelfLogger {
 
         test_msg.set_metadata("app_id", application.get_id())?;
 
-        if application.has_ios() {
-            let ios_app = application.get_ios();
+        if application.has_ios_config() {
+            let ios_app = application.get_ios_config();
 
             if ios_app.has_token() {
                 test_msg.set_metadata("endpoint", format!("{:?}", ios_app.get_endpoint()))?;
@@ -127,12 +127,16 @@ impl GelfLogger {
                 test_msg.set_metadata("action", format!("{:?}", LogAction::ConsumerCreate))?;
                 test_msg.set_metadata("connection_type", "certificate")?;
             }
-        } else if application.has_android() {
-            let android_app = application.get_android();
-            test_msg.set_metadata("api_key", android_app.get_fcm_api_key())?;
-        } else if application.has_web() {
-            let web_app = application.get_web();
-            test_msg.set_metadata("fcm_api_key", web_app.get_fcm_api_key())?;
+        } else if application.has_android_config() {
+            let fcm_config = application.get_android_config().get_fcm_config();
+            test_msg.set_metadata("api_key", fcm_config.get_fcm_api_key())?;
+        } else if application.has_web_config() {
+            let web_app = application.get_web_config();
+
+            if web_app.has_fcm_config() {
+                let fcm_config = web_app.get_fcm_config();
+                test_msg.set_metadata("fcm_api_key", fcm_config.get_fcm_api_key())?;
+            }
         }
 
         self.log_message(test_msg);

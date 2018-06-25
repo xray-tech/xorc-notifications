@@ -4,7 +4,7 @@ use rdkafka::{Message, config::ClientConfig,
 use std::collections::HashMap;
 use kafka::{Config, offset_counter::OffsetCounter};
 use events::{
-    application::Application,
+    crm::Application,
     push_notification::PushNotification,
     header_decoder::HeaderWrapper,
 };

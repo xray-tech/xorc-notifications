@@ -2,9 +2,9 @@ use futures::{Future, future::ok};
 
 use std::collections::HashMap;
 
-use common::{events::{application::{Application,
-                                    IosApplication_ConnectionEndpoint::{Production, Sandbox},
-                                    IosCertificate, IosToken},
+use common::{events::{crm::{Application,
+                            IosConfig_ConnectionEndpoint::{Production, Sandbox},
+                            IosCertificate, IosToken},
                       push_notification::PushNotification},
              kafka::EventHandler, metrics::*};
 
@@ -114,7 +114,7 @@ impl EventHandler for ApnsHandler {
 
         let _ = GLOG.log_config_change("Push config update", &application);
 
-        if !application.has_ios() {
+        if !application.has_ios_config() {
             if let Some(_) = self.notifiers.remove(application_id) {
                 info!("Deleted notifier for application #{}", application_id);
             };
@@ -122,7 +122,7 @@ impl EventHandler for ApnsHandler {
             return;
         }
 
-        let ios_config = application.get_ios();
+        let ios_config = application.get_ios_config();
 
         let endpoint = match ios_config.get_endpoint() {
             Production => Endpoint::Production,

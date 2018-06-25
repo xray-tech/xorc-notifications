@@ -6,7 +6,7 @@ use self::{apple_notification::{ApnsResult_Reason, ApnsResult_Reason::*, ApnsRes
            webpush_notification::WebPushResult_Error};
 
 pub mod apple_notification;
-pub mod application;
+pub mod crm;
 pub mod google_notification;
 pub mod header;
 pub mod header_decoder;
