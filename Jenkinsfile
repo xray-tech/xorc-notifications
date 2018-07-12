@@ -1,4 +1,4 @@
-def label = "xray-gateway-${UUID.randomUUID().toString()}"
+def label = "xray-notifications-${UUID.randomUUID().toString()}"
 podTemplate(name: 'docker', label: label, yaml: """
 apiVersion: v1
 kind: Pod
