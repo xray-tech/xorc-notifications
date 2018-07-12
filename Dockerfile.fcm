@@ -1,0 +1,12 @@
+FROM xorc-notifications:latest
+MAINTAINER Julius de Bruijn <julius.debruijn@360dialog.com>
+
+RUN mv target/release/fcm /bin
+RUN chmod a+x /bin/fcm
+RUN rm -rf /usr/src/fcm
+
+ENV CONFIG "/etc/xorc-notifications/fcm.toml"
+
+WORKDIR /
+
+CMD "/bin/fcm"

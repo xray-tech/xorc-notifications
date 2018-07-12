@@ -1,0 +1,12 @@
+FROM xorc-notifications:latest
+MAINTAINER Julius de Bruijn <julius.debruijn@360dialog.com>
+
+RUN mv target/release/apns2 /bin
+RUN chmod a+x /bin/apns2
+RUN rm -rf /usr/src/xorc-notifications
+
+ENV CONFIG "/etc/xorc-notifications/apns2.toml"
+
+WORKDIR /
+
+CMD "/bin/apns2"
