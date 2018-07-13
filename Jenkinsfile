@@ -27,7 +27,7 @@ spec:
             mountPath: /var/lib/docker
         resources:
           requests:
-            cpu: 1.5
+            cpu: 1
     volumes:
       - name: docker-graph-storage
         persistentVolumeClaim:
