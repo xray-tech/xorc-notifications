@@ -1,4 +1,4 @@
-FROM xorc-notifications:latest
+FROM eu.gcr.io/xray2poc/xorc-notifications:latest
 MAINTAINER Julius de Bruijn <julius.debruijn@360dialog.com>
 
 RUN mv target/release/apns2 /bin
