@@ -27,7 +27,7 @@ spec:
             mountPath: /var/lib/docker
         resources:
           requests:
-            cpu: 1
+            cpu: 1.5
     volumes:
       - name: docker-graph-storage
         persistentVolumeClaim:
@@ -61,27 +61,29 @@ spec:
         def gitCommit = scmVars.GIT_COMMIT
 
         container('docker') {
-            sh("docker login -u _json_key --password-stdin https://eu.gcr.io < /etc/service-account/xray2poc.json")
-
             stage('Build base image') {
+		sh("docker login -u _json_key --password-stdin https://eu.gcr.io < /etc/service-account/xray2poc.json")
                 def image = "eu.gcr.io/xray2poc/xorc-notifications:${gitCommit}"
                 sh("docker build -t ${image} .")
                 sh("docker push ${image}")
             }
 
             stage('Build apns2') {
+		sh("docker login -u _json_key --password-stdin https://eu.gcr.io < /etc/service-account/xray2poc.json")
                 def image = "eu.gcr.io/xray2poc/apns2:${gitCommit}"
                 sh("docker build -t ${image} -f Dockerfile.apns2 .")
                 sh("docker push ${image}")
             }
 
             stage('Build fcm') {
+		sh("docker login -u _json_key --password-stdin https://eu.gcr.io < /etc/service-account/xray2poc.json")
                 def image = "eu.gcr.io/xray2poc/fcm:${gitCommit}"
                 sh("docker build -t ${image} -f Dockerfile.fcm .")
                 sh("docker push ${image}")
             }
 
             stage('Build web_push') {
+		sh("docker login -u _json_key --password-stdin https://eu.gcr.io < /etc/service-account/xray2poc.json")
                 def image = "eu.gcr.io/xray2poc/web_push:${gitCommit}"
                 sh("docker build -t ${image} -f Dockerfile.web_push .")
                 sh("docker push ${image}")
