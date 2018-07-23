@@ -14,8 +14,6 @@ pub struct FcmHandler {
     notifier: Notifier,
 }
 
-use GLOG;
-
 impl FcmHandler {
     pub fn new() -> FcmHandler {
         let api_keys = HashMap::new();
@@ -63,20 +61,33 @@ impl EventHandler for FcmHandler {
     fn handle_config(&mut self, application: Application) {
         let application_id = application.get_id();
 
-        let _ = GLOG.log_config_change("Push config update", &application);
-
         if !application.has_android_config() {
             if let Some(_) = self.api_keys.remove(application_id) {
-                info!("Deleted notifier for application #{}", application_id);
+                info!("Application removed"; &application);
             };
 
             return;
         }
 
-        let api_key = application
-            .get_android_config()
+        let android_config = application.get_android_config();
+
+        if android_config.get_enabled() == false {
+            if let Some(_) = self.api_keys.remove(application_id) {
+                warn!("Application disabled"; &application);
+            };
+
+            return;
+        }
+
+        let api_key = android_config
             .get_fcm_config()
             .get_fcm_api_key();
+
+        info!(
+            "Updating application configuration";
+            &application,
+            "fcm_api_key" => &api_key
+        );
 
         self.api_keys.insert(
             String::from(application_id),

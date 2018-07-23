@@ -1,9 +1,15 @@
 use a2::response::ErrorReason as ApnsReason;
 use web_push::WebPushError;
 
-use self::{apple_notification::{ApnsResult_Reason, ApnsResult_Reason::*, ApnsResult_Status,
-                                ApnsResult_Status::*},
-           webpush_notification::WebPushResult_Error};
+use self::{
+    apple_notification::{
+        ApnsResult_Reason,
+        ApnsResult_Reason::*,
+        ApnsResult_Status,
+        ApnsResult_Status::*
+    },
+    webpush_notification::WebPushResult_Error
+};
 
 pub mod apple_notification;
 pub mod crm;

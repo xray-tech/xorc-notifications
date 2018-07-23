@@ -1,15 +1,25 @@
-use gelf::{Error as GelfError, Level as GelfLevel, Message as GelfMessage};
+use a2::{
+    error::Error,
+    response::Response
+};
 
-use a2::{error::Error, response::Response};
-
-use common::{events::{ResponseAction, apple_notification::*,
-                      apple_notification::ApnsResult_Reason::*,
-                      apple_notification::ApnsResult_Status::*,
-                      push_notification::PushNotification},
-             kafka::{DeliveryFuture, ResponseProducer}, logger::LogAction, metrics::*};
+use common::{
+    events::{
+        ResponseAction,
+        apple_notification::*,
+        apple_notification::ApnsResult_Reason::*,
+        apple_notification::ApnsResult_Status::*,
+        push_notification::PushNotification
+    },
+    kafka::{
+        DeliveryFuture,
+        ResponseProducer
+    },
+    metrics::*
+};
 
 use heck::SnakeCase;
-use {CONFIG, GLOG};
+use CONFIG;
 
 pub struct ApnsProducer {
     producer: ResponseProducer,
@@ -22,32 +32,35 @@ impl ApnsProducer {
         }
     }
 
-    pub fn handle_ok(&self, mut event: PushNotification, response: Response) -> DeliveryFuture {
+    pub fn handle_ok(&self, mut event: PushNotification) -> DeliveryFuture {
         CALLBACKS_COUNTER.with_label_values(&["success"]).inc();
 
-        let _ = self.log_result(
-            "Successfully sent a push notification",
+        info!(
+            "Successfully sent a push notification";
             &event,
-            Some(&response),
-            None,
+            "successful" => true
         );
 
         let mut apns_result = ApnsResult::new();
 
         apns_result.set_successful(true);
         apns_result.set_status(ApnsResult_Status::Success);
-
         event.mut_apple().set_result(apns_result);
 
         self.producer.publish(event, ResponseAction::None)
     }
 
     pub fn handle_err(&self, mut event: PushNotification, response: Response) -> DeliveryFuture {
-        let _ = self.log_result(
-            "Error sending a push notification",
+        let reason = response.error.as_ref()
+            .map(|ref error| {
+                format!("{:?}", error.reason)
+            });
+
+        error!(
+            "Error sending a push notification";
             &event,
-            Some(&response),
-            None,
+            "successful" => false,
+            "reason" => reason
         );
 
         let mut apns_result = ApnsResult::new();
@@ -109,56 +122,6 @@ impl ApnsProducer {
         event.mut_apple().set_result(apns_result);
 
         self.producer.publish(event, ResponseAction::Retry)
-    }
-
-    fn log_result(
-        &self,
-        title: &str,
-        event: &PushNotification,
-        response: Option<&Response>,
-        error: Option<Error>,
-    ) -> Result<(), GelfError> {
-        let mut test_msg = GelfMessage::new(String::from(title));
-        test_msg.set_metadata("action", format!("{:?}", LogAction::NotificationResult))?;
-
-        test_msg
-            .set_full_message(format!("{:?}", event))
-            .set_level(GelfLevel::Informational)
-            .set_metadata("correlation_id", format!("{}", event.get_correlation_id()))?
-            .set_metadata("device_token", format!("{}", event.get_device_token()))?
-            .set_metadata("app_id", format!("{}", event.get_application_id()))?
-            .set_metadata("campaign_id", format!("{}", event.get_campaign_id()))?
-            .set_metadata(
-                "event_source",
-                String::from(event.get_header().get_source()),
-            )?;
-
-        if let Some(r) = response {
-            match r.code {
-                200 => {
-                    test_msg.set_metadata("successful", String::from("true"))?;
-                }
-                code => {
-                    let error: ApnsResult_Status = code.into();
-                    test_msg.set_metadata("successful", String::from("false"))?;
-                    test_msg.set_metadata("error", format!("{:?}", error))?;
-
-                    if let Some(ref reason) = r.error {
-                        test_msg.set_metadata("reason", format!("{:?}", reason.reason))?;
-                    }
-                }
-            }
-        } else {
-            test_msg.set_metadata("successful", String::from("false"))?;
-
-            if let Some(e) = error {
-                test_msg.set_metadata("error", format!("{:?}", e))?;
-            }
-        }
-
-        GLOG.log_message(test_msg);
-
-        Ok(())
     }
 }
 

@@ -1,5 +1,4 @@
 use kafka;
-use logger;
 use toml;
 
 use std::{fs::File, io::prelude::*};
@@ -7,7 +6,6 @@ use std::{fs::File, io::prelude::*};
 #[derive(Deserialize, Debug)]
 pub struct Config {
     pub kafka: kafka::Config,
-    pub log: logger::Config,
 }
 
 impl Config {
