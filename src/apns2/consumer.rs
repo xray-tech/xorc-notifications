@@ -2,15 +2,25 @@ use futures::{Future, future::ok};
 
 use std::collections::HashMap;
 
-use common::{events::{crm::{Application,
-                            IosConfig_ConnectionEndpoint::{Production, Sandbox},
-                            IosCertificate, IosToken},
-                      push_notification::PushNotification},
-             kafka::EventHandler, metrics::*};
+use common::{
+    events::{
+        crm::{
+            Application,
+            IosConfig_ConnectionEndpoint::{
+                Production,
+                Sandbox
+            },
+            IosCertificate,
+            IosToken
+        },
+        push_notification::PushNotification
+    },
+    kafka::EventHandler,
+    metrics::*
+};
 
 use a2::{client::Endpoint, error::Error};
 
-use GLOG;
 use notifier::Notifier;
 use producer::ApnsProducer;
 
@@ -92,7 +102,7 @@ impl EventHandler for ApnsHandler {
                     CALLBACKS_INFLIGHT.dec();
 
                     match result {
-                        Ok(response) => producer.handle_ok(event, response),
+                        Ok(_) => producer.handle_ok(event),
                         Err(Error::ResponseError(e)) => producer.handle_err(event, e),
                         Err(e) => producer.handle_fatal(event, e),
                     }
@@ -112,11 +122,11 @@ impl EventHandler for ApnsHandler {
     fn handle_config(&mut self, application: Application) {
         let application_id = application.get_id();
 
-        let _ = GLOG.log_config_change("Push config update", &application);
+        info!("Push config update"; &application);
 
         if !application.has_ios_config() {
             if let Some(_) = self.notifiers.remove(application_id) {
-                info!("Deleted notifier for application #{}", application_id);
+                warn!("Application removed"; &application);
             };
 
             return;
@@ -124,19 +134,47 @@ impl EventHandler for ApnsHandler {
 
         let ios_config = application.get_ios_config();
 
+        if ios_config.get_enabled() == false {
+            if let Some(_) = self.notifiers.remove(application_id) {
+                warn!("Application disabled"; &application);
+            };
+
+            return;
+        }
+
         let endpoint = match ios_config.get_endpoint() {
             Production => Endpoint::Production,
             Sandbox => Endpoint::Sandbox,
         };
 
         let result = if ios_config.has_token() {
+            let token_config = ios_config.get_token();
+
+            info!(
+                "Updating application configuration";
+                &application,
+                "connection_type" => "token",
+                "team_id" => token_config.get_team_id(),
+                "key_id" => token_config.get_key_id(),
+                "apns_topic" => ios_config.get_apns_topic(),
+                "endpoint" => format!("{:?}", endpoint)
+            );
+
             self.add_token_notifier(
-                ios_config.get_token(),
+                token_config,
                 endpoint,
                 application_id,
                 ios_config.get_apns_topic(),
             )
         } else {
+            info!(
+                "Updating application configuration";
+                &application,
+                "connection_type" => "certificate",
+                "apns_topic" => ios_config.get_apns_topic(),
+                "endpoint" => format!("{:?}", endpoint)
+            );
+
             self.add_certificate_notifier(
                 ios_config.get_certificate(),
                 endpoint,
@@ -147,8 +185,9 @@ impl EventHandler for ApnsHandler {
 
         if let Err(error) = result {
             error!(
-                "Error creating a notifier for application #{}: {:?}",
-                application_id, error
+                "Error connecting to APNs";
+                &application,
+                "error" => format!("{:?}", error)
             )
         };
     }

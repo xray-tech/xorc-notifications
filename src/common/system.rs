@@ -4,15 +4,15 @@ use config::Config;
 use kafka::EventHandler;
 use kafka::PushConsumer;
 use metrics::StatisticsServer;
-
 use std::{thread, thread::JoinHandle};
-
 use futures::sync::oneshot;
+use logger::Logger;
+use slog_scope;
 
 pub struct System;
 
 impl System {
-    pub fn start<H>(name: &str, handler: H, config: &Config)
+    pub fn start<H>(name: &'static str, handler: H, config: &Config)
     where
         H: EventHandler + Send + 'static,
     {
@@ -32,44 +32,49 @@ impl System {
             ap.parse_args_or_exit();
         }
 
-        info!("{} starting up!", name);
+        let logger = Logger::new(name);
+        let _log_guard = slog_scope::set_global_logger(logger);
 
-        let mut threads: Vec<JoinHandle<_>> = Vec::new();
+        slog_scope::scope(&slog_scope::logger().new(slog_o!()), || {
+            info!("Bringing up the system");
 
-        threads.push({
-            let mut consumer = PushConsumer::new(handler, &config.kafka, consumer_partition);
+            let mut threads: Vec<JoinHandle<_>> = Vec::new();
 
-            thread::spawn(move || {
-                debug!("Starting consumer...");
+            threads.push({
+                let mut consumer = PushConsumer::new(handler, &config.kafka, consumer_partition);
 
-                if let Err(error) = consumer.consume(consumer_rx) {
-                    error!("Error in consumer: {:?}", error);
-                }
+                thread::spawn(move || {
+                    debug!("Starting the consumer...");
 
-                debug!("Exiting consumer...");
-            })
-        });
+                    if let Err(error) = consumer.consume(consumer_rx) {
+                        error!("Error in consumer"; "error" => format!("{:?}", error));
+                    }
 
-        threads.push({
-            thread::spawn(move || {
-                debug!("Starting statistics server...");
-                StatisticsServer::handle(server_rx);
-                debug!("Exiting statistics server...");
-            })
-        });
+                    debug!("Exiting consumer...");
+                })
+            });
 
-        chan_select! {
-            exit_signal.recv() -> signal => {
-                info!("Received signal: {:?}", signal);
+            threads.push({
+                thread::spawn(move || {
+                    debug!("Starting statistics server...");
+                    StatisticsServer::handle(server_rx);
+                    debug!("Exiting statistics server...");
+                })
+            });
 
-                server_tx.send(()).unwrap();
-                consumer_tx.send(()).unwrap();
+            chan_select! {
+                exit_signal.recv() -> signal => {
+                    info!("Received signal"; "signal" => format!("{:?}", signal));
 
-                for thread in threads {
-                    thread.thread().unpark();
-                    thread.join().unwrap();
-                }
-            },
-        }
+                    server_tx.send(()).unwrap();
+                    consumer_tx.send(()).unwrap();
+
+                    for thread in threads {
+                        thread.thread().unpark();
+                        thread.join().unwrap();
+                    }
+                },
+            }
+        })
     }
 }

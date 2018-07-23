@@ -5,7 +5,6 @@ use common::{events::{crm::Application, push_notification::PushNotification},
 
 use futures::{Future, future::ok};
 
-use GLOG;
 use notifier::Notifier;
 use producer::WebPushProducer;
 
@@ -66,11 +65,10 @@ impl EventHandler for WebPushHandler {
 
     fn handle_config(&mut self, application: Application) {
         let application_id = application.get_id();
-        let _ = GLOG.log_config_change("Push config update", &application);
 
         if !application.has_web_config() {
             if let Some(_) = self.fcm_api_keys.remove(application_id) {
-                info!("Deleted notifier for application #{}", application_id);
+                info!("Application removed"; &application);
             };
 
             return;
@@ -78,17 +76,36 @@ impl EventHandler for WebPushHandler {
 
         let web_app = application.get_web_config();
 
+        if web_app.get_enabled() == false {
+            if let Some(_) = self.fcm_api_keys.remove(application_id) {
+                warn!("Application disabled"; &application);
+            };
+
+            return;
+        }
+
         if web_app.has_fcm_config() {
             let api_key = web_app
                 .get_fcm_config()
                 .get_fcm_api_key()
                 .to_string();
 
+            info!(
+                "Updating application configuration";
+                &application,
+                "fcm_api_key" => &api_key
+            );
+
             self.fcm_api_keys.insert(
                 String::from(application_id),
                 ApiKey { fcm_api_key: Some(api_key), },
             );
         } else {
+            info!(
+                "Updating application configuration";
+                &application,
+            );
+
             self.fcm_api_keys
                 .insert(String::from(application_id), ApiKey { fcm_api_key: None });
         }

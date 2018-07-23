@@ -1,22 +1,16 @@
-#[macro_use]
-extern crate chan;
-#[macro_use]
-extern crate lazy_static;
-#[macro_use]
-extern crate prometheus;
-#[macro_use]
-extern crate log;
-#[macro_use]
-extern crate serde_derive;
+#[macro_use] extern crate chan;
+#[macro_use] extern crate lazy_static;
+#[macro_use] extern crate prometheus;
+#[macro_use] extern crate serde_derive;
+#[macro_use] extern crate slog;
+#[macro_use] extern crate slog_scope;
 
 extern crate a2;
 extern crate argparse;
 extern crate chan_signal;
 extern crate chrono;
-extern crate env_logger;
 extern crate erased_serde;
 extern crate futures;
-extern crate gelf;
 extern crate http;
 extern crate hyper;
 extern crate protobuf;
@@ -25,6 +19,9 @@ extern crate serde;
 extern crate tokio;
 extern crate toml;
 extern crate web_push;
+extern crate slog_json;
+extern crate slog_async;
+extern crate slog_term;
 
 pub mod config;
 pub mod events;

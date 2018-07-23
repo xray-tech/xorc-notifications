@@ -1,13 +1,16 @@
-use common::{events::{ResponseAction, google_notification::FcmResult,
-                      google_notification::FcmResult_Status::*,
-                      push_notification::PushNotification},
-             kafka::{DeliveryFuture, ResponseProducer}, metrics::CALLBACKS_COUNTER};
+use common::{
+    events::{
+        ResponseAction,
+        google_notification::FcmResult,
+        google_notification::FcmResult_Status::*,
+        push_notification::PushNotification
+    },
+    kafka::{DeliveryFuture, ResponseProducer},
+    metrics::CALLBACKS_COUNTER
+};
 
 use fcm::response::{FcmError, FcmResponse};
-
-use gelf::{Error as GelfError, Level as GelfLevel, Message as GelfMessage};
-
-use {CONFIG, GLOG};
+use CONFIG;
 
 pub struct FcmProducer {
     producer: ResponseProducer,
@@ -21,11 +24,13 @@ impl FcmProducer {
     }
 
     pub fn handle_no_cert(&self, mut event: PushNotification) -> DeliveryFuture {
+        /*
         let _ = self.log_result(
             "Error sending a push notification",
             &event,
             Some("MissingCertificateOrToken"),
         );
+        */
 
         CALLBACKS_COUNTER
             .with_label_values(&["certificate_missing"])
@@ -42,11 +47,10 @@ impl FcmProducer {
     }
 
     pub fn handle_error(&self, mut event: PushNotification, error: FcmError) -> DeliveryFuture {
-        let error_str = format!("{:?}", error);
-        let _ = self.log_result(
-            "Error sending a push notification",
+        error!(
+            "Error sending a push notification";
             &event,
-            Some(&error_str),
+            "reason" => format!("{:?}", error)
         );
 
         let mut fcm_result = FcmResult::new();
@@ -96,53 +100,58 @@ impl FcmProducer {
             fcm_result.set_canonical_ids(canonical_ids);
         }
 
-        match response.results {
-            Some(results) => match results.first() {
-                Some(result) => {
-                    if let Some(ref message_id) = result.message_id {
-                        fcm_result.set_message_id(message_id.clone());
-                    }
+        match response.results.as_ref().and_then(|ref results| results.first()) {
+            Some(result) => {
+                if let Some(ref message_id) = result.message_id {
+                    fcm_result.set_message_id(message_id.clone());
+                }
 
-                    if let Some(ref registration_id) = result.registration_id {
-                        fcm_result.set_registration_id(registration_id.clone());
-                    }
+                if let Some(ref registration_id) = result.registration_id {
+                    fcm_result.set_registration_id(registration_id.clone());
+                }
 
-                    if result.error.is_none() {
-                        let _ =
-                            self.log_result("Successfully sent a push notification", &event, None);
+                match result.error {
+                    None => {
+                        info!(
+                            "Successfully sent a push notification";
+                            &event,
+                            "successful" => true
+                        );
 
                         CALLBACKS_COUNTER.with_label_values(&["success"]).inc();
                         fcm_result.set_successful(true);
                         fcm_result.set_status(Success);
-                    } else {
-                        let _ = self.log_result(
-                            "Error sending a push notification",
+                    }
+                    Some(ref error) => {
+                        error!(
+                            "Error sending a push notification";
                             &event,
-                            result.error.as_ref().map(AsRef::as_ref),
+                            "successful" => false,
+                            "reason" => format!("{}", error)
                         );
 
                         fcm_result.set_successful(false);
 
-                        let (status, status_str) = match result.error.as_ref().map(AsRef::as_ref) {
-                            Some("InvalidTtl") => (InvalidTtl, "invalid_ttl"),
-                            Some("Unavailable") => (Unavailable, "unavailable"),
-                            Some("MessageTooBig") => (MessageTooBig, "message_too_big"),
-                            Some("NotRegistered") => (NotRegistered, "not_registered"),
-                            Some("InvalidDataKey") => (InvalidDataKey, "invalid_data_key"),
-                            Some("MismatchSenderId") => (MismatchSenderId, "mismatch_sender_id"),
-                            Some("InvalidPackageName") => {
+                        let (status, status_str) = match error.as_ref() {
+                            "InvalidTtl" => (InvalidTtl, "invalid_ttl"),
+                            "Unavailable" => (Unavailable, "unavailable"),
+                            "MessageTooBig" => (MessageTooBig, "message_too_big"),
+                            "NotRegistered" => (NotRegistered, "not_registered"),
+                            "InvalidDataKey" => (InvalidDataKey, "invalid_data_key"),
+                            "MismatchSenderId" => (MismatchSenderId, "mismatch_sender_id"),
+                            "InvalidPackageName" => {
                                 (InvalidPackageName, "invalid_package_name")
                             }
-                            Some("MissingRegistration") => {
+                            "MissingRegistration" => {
                                 (MissingRegistration, "missing_registration")
                             }
-                            Some("InvalidRegistration") => {
+                            "InvalidRegistration" => {
                                 (InvalidRegistration, "invalid_registration")
                             }
-                            Some("DeviceMessageRateExceeded") => {
+                            "DeviceMessageRateExceeded" => {
                                 (DeviceMessageRateExceeded, "device_message_rate_exceeded")
                             }
-                            Some("TopicsMessageRateExceeded") => {
+                            "TopicsMessageRateExceeded" => {
                                 (TopicsMessageRateExceeded, "topics_message_rate_exceeded")
                             }
                             _ => (Unknown, "unknown_error"),
@@ -153,25 +162,12 @@ impl FcmProducer {
                         fcm_result.set_status(status);
                     }
                 }
-                None => {
-                    let _ = self.log_result(
-                        "Error sending a push notification",
-                        &event,
-                        Some("UnknownError"),
-                    );
-
-                    CALLBACKS_COUNTER
-                        .with_label_values(&["unknown_error"])
-                        .inc();
-                    fcm_result.set_successful(false);
-                    fcm_result.set_status(Unknown);
-                }
-            },
+            }
             None => {
-                let _ = self.log_result(
-                    "Error sending a push notification",
+                error!(
+                    "Error sending a push notification";
                     &event,
-                    Some("UnknownError"),
+                    "successful" => false,
                 );
 
                 CALLBACKS_COUNTER
@@ -190,38 +186,6 @@ impl FcmProducer {
         event.mut_google().set_response(fcm_result);
 
         self.producer.publish(event, response_action)
-    }
-
-    fn log_result(
-        &self,
-        title: &str,
-        event: &PushNotification,
-        error: Option<&str>,
-    ) -> Result<(), GelfError> {
-        let mut test_msg = GelfMessage::new(String::from(title));
-
-        test_msg
-            .set_full_message(format!("{:?}", event))
-            .set_level(GelfLevel::Informational)
-            .set_metadata("correlation_id", format!("{}", event.get_correlation_id()))?
-            .set_metadata("device_token", format!("{}", event.get_device_token()))?
-            .set_metadata("app_id", format!("{}", event.get_application_id()))?
-            .set_metadata("campaign_id", format!("{}", event.get_campaign_id()))?
-            .set_metadata(
-                "event_source",
-                String::from(event.get_header().get_source()),
-            )?;
-
-        if let Some(msg) = error {
-            test_msg.set_metadata("successful", String::from("false"))?;
-            test_msg.set_metadata("error", format!("{}", msg))?;
-        } else {
-            test_msg.set_metadata("successful", String::from("true"))?;
-        }
-
-        GLOG.log_message(test_msg);
-
-        Ok(())
     }
 }
 
