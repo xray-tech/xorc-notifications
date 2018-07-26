@@ -28,7 +28,7 @@ impl ResponseProducer {
 
         let kafka = Arc::new(Kafka {
             output_topic: config.output_topic.clone(),
-            producer: producer,
+            producer,
         });
 
         ResponseProducer { kafka }

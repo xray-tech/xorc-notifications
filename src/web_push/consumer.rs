@@ -52,7 +52,7 @@ impl EventHandler for WebPushHandler {
 
                         match result {
                             Ok(()) => producer.handle_ok(event),
-                            Err(error) => producer.handle_error(event, error),
+                            Err(error) => producer.handle_error(event, &error),
                         }
                     })
                     .then(|_| ok(()));
@@ -67,7 +67,7 @@ impl EventHandler for WebPushHandler {
         let application_id = application.get_id();
 
         if !application.has_web_config() {
-            if let Some(_) = self.fcm_api_keys.remove(application_id) {
+            if self.fcm_api_keys.remove(application_id).is_some() {
                 info!("Application removed"; &application);
             };
 
@@ -76,8 +76,8 @@ impl EventHandler for WebPushHandler {
 
         let web_app = application.get_web_config();
 
-        if web_app.get_enabled() == false {
-            if let Some(_) = self.fcm_api_keys.remove(application_id) {
+        if !web_app.get_enabled() {
+            if self.fcm_api_keys.remove(application_id).is_some() {
                 warn!("Application disabled"; &application);
             };
 

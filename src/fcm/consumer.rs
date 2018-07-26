@@ -47,7 +47,7 @@ impl EventHandler for FcmHandler {
                         CALLBACKS_INFLIGHT.dec();
 
                         match result {
-                            Ok(response) => producer.handle_response(event, response),
+                            Ok(response) => producer.handle_response(event, &response),
                             Err(error) => producer.handle_error(event, error),
                         }
                     })
@@ -62,7 +62,7 @@ impl EventHandler for FcmHandler {
         let application_id = application.get_id();
 
         if !application.has_android_config() {
-            if let Some(_) = self.api_keys.remove(application_id) {
+            if self.api_keys.remove(application_id).is_some() {
                 info!("Application removed"; &application);
             };
 
@@ -71,8 +71,8 @@ impl EventHandler for FcmHandler {
 
         let android_config = application.get_android_config();
 
-        if android_config.get_enabled() == false {
-            if let Some(_) = self.api_keys.remove(application_id) {
+        if !android_config.get_enabled() {
+            if self.api_keys.remove(application_id).is_some() {
                 warn!("Application disabled"; &application);
             };
 

@@ -76,8 +76,7 @@ impl Notifier {
     }
 
     pub fn notify(&self, event: &PushNotification) -> Timeout<FutureResponse> {
-        self.client
-            .send_with_timeout(self.gen_payload(event), Duration::from_secs(3))
+        self.client.send_with_timeout(self.gen_payload(event), Duration::from_secs(3))
     }
 
     fn gen_payload<'a>(&'a self, event: &'a PushNotification) -> Payload<'a> {
@@ -114,7 +113,7 @@ impl Notifier {
             if alert_data.has_title_loc_key() {
                 builder.set_title_loc_key(alert_data.get_title_loc_key());
             }
-            if alert_data.get_title_loc_args().len() > 0 {
+            if !alert_data.get_title_loc_args().is_empty() {
                 builder.set_title_loc_args(&alert_data.get_title_loc_args());
             }
             if alert_data.has_action_loc_key() {
@@ -126,7 +125,7 @@ impl Notifier {
             if alert_data.has_loc_key() {
                 builder.set_loc_key(alert_data.get_loc_key());
             }
-            if alert_data.get_loc_args().len() > 0 {
+            if !alert_data.get_loc_args().is_empty() {
                 builder.set_loc_args(&alert_data.get_loc_args());
             }
             if notification_data.has_badge() {

@@ -19,7 +19,7 @@ pub enum LogAction {
 pub struct Logger;
 
 impl Logger {
-    pub fn new(application_name: &'static str) -> slog::Logger {
+    pub fn build(application_name: &'static str) -> slog::Logger {
         let drain = match env::var("LOG_FORMAT") {
             Ok(ref val) if val == "json" => {
                 let drain = Json::new(io::stdout()).add_default_keys().build().fuse();
@@ -32,14 +32,12 @@ impl Logger {
             }
         };
 
-        let environment = env::var("RUST_ENV").unwrap_or(String::from("development"));
+        let environment = env::var("RUST_ENV").unwrap_or_else(|_| String::from("development"));
 
-        let slogger = slog::Logger::root(
+        slog::Logger::root(
             drain,
             o!("application_name" => application_name, "environment" => environment)
-        );
-
-        slogger
+        )
     }
 }
 

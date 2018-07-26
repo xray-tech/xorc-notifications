@@ -45,9 +45,9 @@ impl ApnsHandler {
         certificate: &IosCertificate,
         endpoint: Endpoint,
         application_id: &str,
-        apns_topic: &str,
+        apns_topic: &str
     ) -> Result<(), Error> {
-        let mut pkcs12 = certificate.get_pkcs12().clone();
+        let mut pkcs12 = certificate.get_pkcs12();
 
         let notifier = Notifier::certificate(
             &mut pkcs12,
@@ -68,7 +68,7 @@ impl ApnsHandler {
         application_id: &str,
         apns_topic: &str,
     ) -> Result<(), Error> {
-        let mut pkcs8 = token.get_pkcs8().clone();
+        let mut pkcs8 = token.get_pkcs8();
 
         let notifier = Notifier::token(
             &mut pkcs8,
@@ -103,8 +103,8 @@ impl EventHandler for ApnsHandler {
 
                     match result {
                         Ok(_) => producer.handle_ok(event),
-                        Err(Error::ResponseError(e)) => producer.handle_err(event, e),
-                        Err(e) => producer.handle_fatal(event, e),
+                        Err(Error::ResponseError(e)) => producer.handle_err(event, &e),
+                        Err(e) => producer.handle_fatal(event, &e),
                     }
                 })
                 .then(|_| ok(()));
@@ -112,7 +112,7 @@ impl EventHandler for ApnsHandler {
             Box::new(notification_send)
         } else {
             let connection_error = producer
-                .handle_fatal(event, Error::ConnectionError)
+                .handle_fatal(event, &Error::ConnectionError)
                 .then(|_| ok(()));
 
             Box::new(connection_error)
@@ -125,19 +125,19 @@ impl EventHandler for ApnsHandler {
         info!("Push config update"; &application);
 
         if !application.has_ios_config() {
-            if let Some(_) = self.notifiers.remove(application_id) {
+            if self.notifiers.remove(application_id).is_some() {
                 warn!("Application removed"; &application);
-            };
+            }
 
             return;
         }
 
         let ios_config = application.get_ios_config();
 
-        if ios_config.get_enabled() == false {
-            if let Some(_) = self.notifiers.remove(application_id) {
+        if !ios_config.get_enabled() {
+            if self.notifiers.remove(application_id).is_some() {
                 warn!("Application disabled"; &application);
-            };
+            }
 
             return;
         }

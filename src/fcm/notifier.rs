@@ -58,11 +58,11 @@ impl Notifier {
                 builder.title_loc_key(localized.get_title_loc_key());
             }
 
-            if localized.get_title_loc_args().len() > 0 {
+            if !localized.get_title_loc_args().is_empty() {
                 builder.title_loc_args(localized.get_title_loc_args());
             }
 
-            if localized.get_body_loc_args().len() > 0 {
+            if !localized.get_body_loc_args().is_empty() {
                 builder.body_loc_args(localized.get_body_loc_args());
             }
 
@@ -90,7 +90,7 @@ impl Notifier {
             }
         }
 
-        if notification.get_registration_ids().len() > 0 {
+        if !notification.get_registration_ids().is_empty() {
             message.registration_ids(notification.get_registration_ids());
         }
 

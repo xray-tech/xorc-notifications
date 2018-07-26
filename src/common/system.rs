@@ -32,7 +32,7 @@ impl System {
             ap.parse_args_or_exit();
         }
 
-        let logger = Logger::new(name);
+        let logger = Logger::build(name);
         let _log_guard = slog_scope::set_global_logger(logger);
 
         slog_scope::scope(&slog_scope::logger().new(slog_o!()), || {

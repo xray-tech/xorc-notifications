@@ -88,7 +88,7 @@ impl FcmProducer {
     pub fn handle_response(
         &self,
         mut event: PushNotification,
-        response: FcmResponse,
+        response: &FcmResponse,
     ) -> DeliveryFuture {
         let mut fcm_result = FcmResult::new();
 
@@ -127,7 +127,7 @@ impl FcmProducer {
                             "Error sending a push notification";
                             &event,
                             "successful" => false,
-                            "reason" => format!("{}", error)
+                            "reason" => error.to_string()
                         );
 
                         fcm_result.set_successful(false);

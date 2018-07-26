@@ -55,7 +55,7 @@ impl WebPushProducer {
         self.producer.publish(event, ResponseAction::Retry)
     }
 
-    pub fn handle_error(&self, mut event: PushNotification, error: WebPushError) -> DeliveryFuture {
+    pub fn handle_error(&self, mut event: PushNotification, error: &WebPushError) -> DeliveryFuture {
         error!(
             "Error sending a push notification";
             &event,
@@ -66,7 +66,7 @@ impl WebPushProducer {
         let mut web_result = WebPushResult::new();
 
         web_result.set_successful(false);
-        web_result.set_error((&error).into());
+        web_result.set_error(error.into());
 
         event.mut_web().set_response(web_result);
 

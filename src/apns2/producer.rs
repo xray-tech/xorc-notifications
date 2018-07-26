@@ -50,7 +50,7 @@ impl ApnsProducer {
         self.producer.publish(event, ResponseAction::None)
     }
 
-    pub fn handle_err(&self, mut event: PushNotification, response: Response) -> DeliveryFuture {
+    pub fn handle_err(&self, mut event: PushNotification, response: &Response) -> DeliveryFuture {
         let reason = response.error.as_ref()
             .map(|ref error| {
                 format!("{:?}", error.reason)
@@ -103,7 +103,7 @@ impl ApnsProducer {
         self.producer.publish(event, response_action)
     }
 
-    pub fn handle_fatal(&self, mut event: PushNotification, error: Error) -> DeliveryFuture {
+    pub fn handle_fatal(&self, mut event: PushNotification, error: &Error) -> DeliveryFuture {
         let mut apns_result = ApnsResult::new();
 
         let status = match error {

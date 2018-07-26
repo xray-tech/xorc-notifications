@@ -39,27 +39,27 @@ impl From<u16> for ApnsResult_Status {
 impl<'a> From<&'a ApnsReason> for ApnsResult_Reason {
     fn from(e: &'a ApnsReason) -> ApnsResult_Reason {
         match e {
-            &ApnsReason::PayloadEmpty => PayloadEmpty,
-            &ApnsReason::BadTopic => BadTopic,
-            &ApnsReason::TopicDisallowed => TopicDisallowed,
-            &ApnsReason::BadMessageId => BadMessageId,
-            &ApnsReason::BadExpirationDate => BadExpirationDate,
-            &ApnsReason::BadPriority => BadPriority,
-            &ApnsReason::MissingDeviceToken => MissingDeviceToken,
-            &ApnsReason::BadDeviceToken => BadDeviceToken,
-            &ApnsReason::DeviceTokenNotForTopic => DeviceTokenNotForTopic,
-            &ApnsReason::DuplicateHeaders => DuplicateHeaders,
-            &ApnsReason::BadCertificateEnvironment => BadCertificateEnvironment,
-            &ApnsReason::BadCertificate => BadCertificate,
-            &ApnsReason::BadPath => BadPath,
-            &ApnsReason::IdleTimeout => IdleTimeout,
-            &ApnsReason::Shutdown => Shutdown,
-            &ApnsReason::InternalServerError => InternalServerError,
-            &ApnsReason::ServiceUnavailable => ServiceUnavailable,
-            &ApnsReason::MissingTopic => MissingTopic,
-            &ApnsReason::InvalidProviderToken => InvalidProviderToken,
-            &ApnsReason::MissingProviderToken => MissingProviderToken,
-            &ApnsReason::ExpiredProviderToken => ExpiredProviderToken,
+            ApnsReason::PayloadEmpty => PayloadEmpty,
+            ApnsReason::BadTopic => BadTopic,
+            ApnsReason::TopicDisallowed => TopicDisallowed,
+            ApnsReason::BadMessageId => BadMessageId,
+            ApnsReason::BadExpirationDate => BadExpirationDate,
+            ApnsReason::BadPriority => BadPriority,
+            ApnsReason::MissingDeviceToken => MissingDeviceToken,
+            ApnsReason::BadDeviceToken => BadDeviceToken,
+            ApnsReason::DeviceTokenNotForTopic => DeviceTokenNotForTopic,
+            ApnsReason::DuplicateHeaders => DuplicateHeaders,
+            ApnsReason::BadCertificateEnvironment => BadCertificateEnvironment,
+            ApnsReason::BadCertificate => BadCertificate,
+            ApnsReason::BadPath => BadPath,
+            ApnsReason::IdleTimeout => IdleTimeout,
+            ApnsReason::Shutdown => Shutdown,
+            ApnsReason::InternalServerError => InternalServerError,
+            ApnsReason::ServiceUnavailable => ServiceUnavailable,
+            ApnsReason::MissingTopic => MissingTopic,
+            ApnsReason::InvalidProviderToken => InvalidProviderToken,
+            ApnsReason::MissingProviderToken => MissingProviderToken,
+            ApnsReason::ExpiredProviderToken => ExpiredProviderToken,
             _ => Nothing,
         }
     }
@@ -91,6 +91,7 @@ impl<'a> From<&'a WebPushError> for WebPushResult_Error {
     }
 }
 
+#[derive(Clone, Copy)]
 pub enum ResponseAction {
     None,
     UnsubscribeEntity,

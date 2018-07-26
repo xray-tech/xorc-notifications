@@ -33,14 +33,14 @@ pub struct PushConsumer<H: EventHandler> {
 impl<H: EventHandler> PushConsumer<H> {
     /// A kafka consumer to consume push notification events. `EventHandler`
     /// should contain the business logic.
-    pub fn new(event_handler: H, config: &Config, partition: i32) -> PushConsumer<H> {
+    pub fn new(handler: H, config: &Config, partition: i32) -> PushConsumer<H> {
         PushConsumer {
             config_topic: config.config_topic.clone(),
             input_topic: config.input_topic.clone(),
             group_id: config.group_id.clone(),
             brokers: config.brokers.clone(),
-            partition: partition,
-            handler: event_handler,
+            partition,
+            handler,
         }
     }
 
