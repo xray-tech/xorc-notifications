@@ -1,4 +1,3 @@
 src/common/events/*
 !src/common/events/mod.rs
-config/*.toml
 target

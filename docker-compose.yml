@@ -1,0 +1,67 @@
+version: '3'
+services:
+  notifications:
+    build: .
+    image: eu.gcr.io/xray2poc/xorc-notifications:latest
+  apns:
+    build:
+      context: .
+      dockerfile: Dockerfile.apns2
+    depends_on:
+      - notifications
+      - kafka
+    links:
+      - kafka
+      - zookeeper
+    environment:
+      RUST_BACKTRACE: 1
+      CONFIG: "/etc/xorc-notifications/apns2.toml"
+    volumes:
+      - ./config:/etc/xorc-notifications
+  fcm:
+    build:
+      context: .
+      dockerfile: Dockerfile.fcm
+    depends_on:
+      - notifications
+      - kafka
+    links:
+      - kafka
+      - zookeeper
+    environment:
+      RUST_BACKTRACE: 1
+      CONFIG: "/etc/xorc-notifications/fcm.toml"
+    volumes:
+      - ./config:/etc/xorc-notifications
+  web_push:
+    build:
+      context: .
+      dockerfile: Dockerfile.web_push
+    depends_on:
+      - notifications
+      - kafka
+    links:
+      - kafka
+      - zookeeper
+    environment:
+      RUST_BACKTRACE: 1
+      CONFIG: "/etc/xorc-notifications/web_push.toml"
+    command: /bin/web_push
+    volumes:
+      - ./config:/etc/xorc-notifications
+  zookeeper:
+    logging:
+      driver: "none"
+    image: wurstmeister/zookeeper
+    ports:
+      - "2181:2181"
+  kafka:
+    image: wurstmeister/kafka
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_HOST_NAME: "localhost"
+      KAFKA_CREATE_TOPICS: "test.crm.applications:1:1:compact,test.notifications.apns:1:1,test.notifications.android:1:1,test.notifications.webpush:1:1,test.oam:1:1"
