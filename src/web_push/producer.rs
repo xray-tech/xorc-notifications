@@ -24,13 +24,13 @@ impl WebPushProducer {
     }
 
     pub fn handle_ok(&self, mut event: PushNotification) -> DeliveryFuture {
-        CALLBACKS_COUNTER.with_label_values(&["success"]).inc();
-
         info!(
             "Successfully sent a push notification";
             &event,
             "successful" => true
         );
+
+        CALLBACKS_COUNTER.with_label_values(&["success"]).inc();
 
         let mut web_result = WebPushResult::new();
 
@@ -41,7 +41,11 @@ impl WebPushProducer {
     }
 
     pub fn handle_no_cert(&self, mut event: PushNotification) -> DeliveryFuture {
-        error!("Firebase API key missing"; &event, "successful" => false);
+        error!(
+            "Application is not configured to send web push messages";
+            &event,
+            "successful" => false
+        );
 
         CALLBACKS_COUNTER
             .with_label_values(&["certificate_missing"])

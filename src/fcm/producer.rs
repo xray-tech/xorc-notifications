@@ -24,17 +24,13 @@ impl FcmProducer {
     }
 
     pub fn handle_no_cert(&self, mut event: PushNotification) -> DeliveryFuture {
-        /*
-        let _ = self.log_result(
-            "Error sending a push notification",
+        error!(
+            "No FCM key set for application";
             &event,
-            Some("MissingCertificateOrToken"),
+            "successful" => false,
         );
-        */
 
-        CALLBACKS_COUNTER
-            .with_label_values(&["certificate_missing"])
-            .inc();
+        CALLBACKS_COUNTER.with_label_values(&["certificate_missing"]).inc();
 
         let mut fcm_result = FcmResult::new();
 
