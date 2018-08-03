@@ -1,6 +1,5 @@
 use common::{
     events::{
-        ResponseAction,
         push_notification::PushNotification,
         webpush_notification::WebPushResult
     },
@@ -23,7 +22,7 @@ impl WebPushProducer {
         }
     }
 
-    pub fn handle_ok(&self, mut event: PushNotification) -> DeliveryFuture {
+    pub fn handle_ok(&self, key: Option<Vec<u8>>, mut event: PushNotification) -> DeliveryFuture {
         info!(
             "Successfully sent a push notification";
             &event,
@@ -37,29 +36,27 @@ impl WebPushProducer {
         web_result.set_successful(true);
         event.mut_web().set_response(web_result);
 
-        self.producer.publish(event, ResponseAction::None)
+        self.producer.publish(key, &event)
     }
 
-    pub fn handle_no_cert(&self, mut event: PushNotification) -> DeliveryFuture {
+    pub fn handle_no_cert(&self, key: Option<Vec<u8>>, mut event: PushNotification) -> DeliveryFuture {
         error!(
             "Application is not configured to send web push messages";
             &event,
             "successful" => false
         );
 
-        CALLBACKS_COUNTER
-            .with_label_values(&["certificate_missing"])
-            .inc();
+        CALLBACKS_COUNTER.with_label_values(&["certificate_missing"]).inc();
 
         let mut web_result = WebPushResult::new();
 
         web_result.set_successful(false);
         event.mut_web().set_response(web_result);
 
-        self.producer.publish(event, ResponseAction::Retry)
+        self.producer.publish(key, &event)
     }
 
-    pub fn handle_error(&self, mut event: PushNotification, error: &WebPushError) -> DeliveryFuture {
+    pub fn handle_error(&self, key: Option<Vec<u8>>, mut event: PushNotification, error: &WebPushError) -> DeliveryFuture {
         error!(
             "Error sending a push notification";
             &event,
@@ -74,20 +71,9 @@ impl WebPushProducer {
 
         event.mut_web().set_response(web_result);
 
-        CALLBACKS_COUNTER
-            .with_label_values(&[error.short_description()])
-            .inc();
+        CALLBACKS_COUNTER.with_label_values(&[error.short_description()]).inc();
 
-        let response_action = match error {
-            WebPushError::ServerError(_) => ResponseAction::Retry,
-            WebPushError::TimeoutError => ResponseAction::Retry,
-            WebPushError::EndpointNotValid | WebPushError::EndpointNotFound => {
-                ResponseAction::UnsubscribeEntity
-            }
-            _ => ResponseAction::None,
-        };
-
-        self.producer.publish(event, response_action)
+        self.producer.publish(key, &event)
     }
 }
 

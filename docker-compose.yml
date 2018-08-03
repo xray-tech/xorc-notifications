@@ -64,4 +64,4 @@ services:
     environment:
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
       KAFKA_ADVERTISED_HOST_NAME: "localhost"
-      KAFKA_CREATE_TOPICS: "test.crm.applications:1:1:compact,test.notifications.apns:1:1,test.notifications.android:1:1,test.notifications.webpush:1:1,test.oam:1:1"
+      KAFKA_CREATE_TOPICS: "test.crm.applications:1:1:compact,test.notifications.apns:1:1,test.notifications.android:1:1,test.notifications.webpush:1:1,test.oam:1:1:compact"

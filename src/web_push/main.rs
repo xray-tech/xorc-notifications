@@ -26,7 +26,7 @@ lazy_static! {
 
 fn main() {
     System::start(
-        "Web push notification system",
+        "web_push",
         WebPushHandler::new(),
         &CONFIG,
     );

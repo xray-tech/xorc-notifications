@@ -1,11 +1,15 @@
-use rdkafka::{Message, config::ClientConfig,
-              consumer::{CommitMode, Consumer, stream_consumer::StreamConsumer},
-              topic_partition_list::{Offset, TopicPartitionList}};
+use rdkafka::{
+    Message,
+    config::ClientConfig,
+    consumer::{CommitMode, Consumer, stream_consumer::StreamConsumer},
+    topic_partition_list::{Offset, TopicPartitionList},
+};
 use std::collections::HashMap;
-use kafka::{Config, offset_counter::OffsetCounter};
+use kafka::{Config, ConsumerType, offset_counter::OffsetCounter};
 use events::{
     crm::Application,
     push_notification::PushNotification,
+    http_request::HttpRequest,
     header_decoder::HeaderWrapper,
 };
 use futures::{Future, Stream, sync::oneshot};
@@ -15,13 +19,21 @@ use tokio::{self, executor::current_thread::CurrentThread};
 pub trait EventHandler {
     fn handle_notification(
         &self,
+        key: Option<Vec<u8>>,
         event: PushNotification,
+    ) -> Box<Future<Item = (), Error = ()> + 'static + Send>;
+
+    fn handle_http(
+        &self,
+        key: Option<Vec<u8>>,
+        event: HttpRequest,
     ) -> Box<Future<Item = (), Error = ()> + 'static + Send>;
 
     fn handle_config(&mut self, config: Application);
 }
 
-pub struct PushConsumer<H: EventHandler> {
+pub struct RequestConsumer<H: EventHandler> {
+    consumer_type: ConsumerType,
     config_topic: String,
     input_topic: String,
     group_id: String,
@@ -30,11 +42,12 @@ pub struct PushConsumer<H: EventHandler> {
     handler: H,
 }
 
-impl<H: EventHandler> PushConsumer<H> {
+impl<H: EventHandler> RequestConsumer<H> {
     /// A kafka consumer to consume push notification events. `EventHandler`
     /// should contain the business logic.
-    pub fn new(handler: H, config: &Config, partition: i32) -> PushConsumer<H> {
-        PushConsumer {
+    pub fn new(handler: H, config: &Config, partition: i32) -> RequestConsumer<H> {
+        RequestConsumer {
+            consumer_type: config.consumer_type.clone(),
             config_topic: config.config_topic.clone(),
             input_topic: config.input_topic.clone(),
             group_id: config.group_id.clone(),
@@ -86,16 +99,42 @@ impl<H: EventHandler> PushConsumer<H> {
                             warn!("Error storing offset: #{}", e);
                         }
 
-                        let event_parsing = msg.payload()
-                            .and_then(|payload| parse_from_bytes::<PushNotification>(payload).ok());
+                        match self.consumer_type {
+                            ConsumerType::PushNotification => {
+                                let event_parsing = msg.payload()
+                                    .and_then(|payload| parse_from_bytes::<PushNotification>(payload).ok());
 
-                        match event_parsing {
-                            Some(event) => {
-                                let notification_handling = self.handler.handle_notification(event);
-                                tokio::spawn(notification_handling);
+                                match event_parsing {
+                                    Some(event) => {
+                                        let notification_handling = self.handler.handle_notification(
+                                            msg.key().map(|key| key.to_vec()),
+                                            event
+                                        );
+
+                                        tokio::spawn(notification_handling);
+                                    }
+                                    None => {
+                                        error!("Error parsing notification protobuf");
+                                    }
+                                }
                             }
-                            None => {
-                                error!("Error parsing notification protobuf");
+                            ConsumerType::HttpRequest => {
+                                let event_parsing = msg.payload()
+                                    .and_then(|payload| parse_from_bytes::<HttpRequest>(payload).ok());
+
+                                match event_parsing {
+                                    Some(event) => {
+                                        let notification_handling = self.handler.handle_http(
+                                            msg.key().map(|key| key.to_vec()),
+                                            event
+                                        );
+
+                                        tokio::spawn(notification_handling);
+                                    }
+                                    None => {
+                                        error!("Error parsing http protobuf");
+                                    }
+                                }
                             }
                         }
                     }

@@ -13,7 +13,8 @@ use common::{
             IosCertificate,
             IosToken
         },
-        push_notification::PushNotification
+        push_notification::PushNotification,
+        http_request::HttpRequest,
     },
     kafka::EventHandler,
     metrics::*
@@ -87,6 +88,7 @@ impl ApnsHandler {
 impl EventHandler for ApnsHandler {
     fn handle_notification(
         &self,
+        key: Option<Vec<u8>>,
         event: PushNotification,
     ) -> Box<Future<Item = (), Error = ()> + 'static + Send> {
         let producer = self.producer.clone();
@@ -94,7 +96,7 @@ impl EventHandler for ApnsHandler {
 
         CALLBACKS_INFLIGHT.inc();
 
-        if let Some(notifier) = self.notifiers.get(event.get_application_id()) {
+        if let Some(notifier) = self.notifiers.get(event.get_universe()) {
             let notification_send = notifier
                 .notify(&event)
                 .then(move |result| {
@@ -102,9 +104,9 @@ impl EventHandler for ApnsHandler {
                     CALLBACKS_INFLIGHT.dec();
 
                     match result {
-                        Ok(_) => producer.handle_ok(event),
-                        Err(Error::ResponseError(e)) => producer.handle_err(event, &e),
-                        Err(e) => producer.handle_fatal(event, &e),
+                        Ok(_) => producer.handle_ok(key, event),
+                        Err(Error::ResponseError(e)) => producer.handle_err(key, event, &e),
+                        Err(e) => producer.handle_fatal(key, event, &e),
                     }
                 })
                 .then(|_| ok(()));
@@ -112,11 +114,20 @@ impl EventHandler for ApnsHandler {
             Box::new(notification_send)
         } else {
             let connection_error = producer
-                .handle_fatal(event, &Error::ConnectionError)
+                .handle_fatal(key, event, &Error::ConnectionError)
                 .then(|_| ok(()));
 
             Box::new(connection_error)
         }
+    }
+
+    fn handle_http(
+        &self,
+        _: Option<Vec<u8>>,
+        _: HttpRequest,
+    ) -> Box<Future<Item=(), Error=()> + 'static + Send> {
+        warn!("We don't handle http request events here");
+        Box::new(ok(()))
     }
 
     fn handle_config(&mut self, application: Application) {

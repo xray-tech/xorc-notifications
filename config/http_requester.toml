@@ -1,0 +1,7 @@
+[kafka]
+input_topic   = "test.http"
+config_topic  = "test.crm.applications"
+output_topic  = "test.oam"
+group_id      = "test.consumers.http_requester"
+brokers       = "kafka:9092"
+consumer_type = "http_request"

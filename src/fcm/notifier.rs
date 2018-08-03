@@ -1,8 +1,6 @@
 use common::events::{google_notification::GoogleNotification_Priority,
                      push_notification::PushNotification};
-
 use fcm::*;
-use std::collections::HashMap;
 
 pub struct Notifier {
     client: Client,
@@ -66,26 +64,13 @@ impl Notifier {
                 builder.body_loc_args(localized.get_body_loc_args());
             }
 
-            let key_values = localized.get_data().iter();
-            let data = key_values.fold(HashMap::new(), |mut acc, kv| {
-                acc.insert(kv.get_key(), kv.get_value());
-                acc
-            });
-            if !data.is_empty() {
-                if let Err(e) = message.data(&data) {
-                    error!("Couldn't encode custom data to the message: {:?}", e);
-                }
+            if let Err(e) = message.data(localized.get_data()) {
+                error!("Couldn't encode custom data to the message: {:?}", e);
             }
+
             message.notification(builder.finalize());
         } else {
-            let key_values = notification.get_message().get_data().iter();
-
-            let data = key_values.fold(HashMap::new(), |mut acc, kv| {
-                acc.insert(kv.get_key(), kv.get_value());
-                acc
-            });
-
-            if let Err(e) = message.data(&data) {
+            if let Err(e) = message.data(notification.get_message().get_data()) {
                 error!("Couldn't encode custom data to the message: {:?}", e);
             }
         }

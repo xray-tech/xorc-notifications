@@ -1,11 +1,13 @@
-use rdkafka::{config::ClientConfig, producer::{DeliveryFuture, FutureProducer}};
+use rdkafka::{
+    config::ClientConfig,
+    producer::future_producer::{
+        DeliveryFuture,
+        FutureProducer,
+        FutureRecord,
+    },
+};
 
 use kafka::Config;
-
-use events::{ResponseAction, header::Header, push_notification::PushNotification,
-             push_result::PushResult};
-
-use chrono::offset::Utc;
 use protobuf::Message;
 use std::sync::Arc;
 
@@ -34,46 +36,23 @@ impl ResponseProducer {
         ResponseProducer { kafka }
     }
 
-    fn get_retry_after(event: &PushNotification) -> u32 {
-        if event.has_retry_count() {
-            let base: u32 = 2;
-            base.pow(event.get_retry_count())
-        } else {
-            1
-        }
-    }
-
     pub fn publish(
         &self,
-        event: PushNotification,
-        response_action: ResponseAction,
+        key: Option<Vec<u8>>,
+        event: &Message,
     ) -> DeliveryFuture {
-        let mut result_event = PushResult::new();
+        let payload = event.write_to_bytes().unwrap();
 
-        let mut header = Header::new();
-        header.set_created_at(Utc::now().timestamp_millis());
-        header.set_source(String::from("apns"));
-        header.set_recipient_id(String::from(event.get_header().get_recipient_id()));
-        header.set_field_type(String::from("notification.NotificationResult"));
+        let record = FutureRecord {
+            topic: &self.kafka.output_topic,
+            partition: None,
+            payload: Some(&payload),
+            key: key.as_ref(),
+            timestamp: None,
+            headers: None,
+        };
 
-        result_event.set_header(header);
-
-        match response_action {
-            ResponseAction::None => result_event.set_none(true),
-            ResponseAction::UnsubscribeEntity => result_event.set_unsubscribe_entity(true),
-            ResponseAction::Retry => result_event.set_retry_in(Self::get_retry_after(&event)),
-        }
-
-        result_event.set_notification(event);
-
-        self.kafka.producer.send_copy::<Vec<u8>, str>(
-            &self.kafka.output_topic,
-            None,                                               // topic
-            Some(&result_event.write_to_bytes().unwrap()),      // payload
-            Some(result_event.get_header().get_recipient_id()), // key
-            None,                                               // timestamp
-            1000, // block in milliseconds if the queue is full,
-        )
+        self.kafka.producer.send::<Vec<u8>, Vec<u8>>(record, -1)
     }
 }
 

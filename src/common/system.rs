@@ -2,7 +2,7 @@ use argparse::{ArgumentParser, Store};
 use chan_signal::{notify, Signal};
 use config::Config;
 use kafka::EventHandler;
-use kafka::PushConsumer;
+use kafka::RequestConsumer;
 use metrics::StatisticsServer;
 use std::{thread, thread::JoinHandle};
 use futures::sync::oneshot;
@@ -41,10 +41,10 @@ impl System {
             let mut threads: Vec<JoinHandle<_>> = Vec::new();
 
             threads.push({
-                let mut consumer = PushConsumer::new(handler, &config.kafka, consumer_partition);
+                let mut consumer = RequestConsumer::new(handler, &config.kafka, consumer_partition);
 
                 thread::spawn(move || {
-                    debug!("Starting the consumer...");
+                    debug!("Starting the consumer..."; "partition" => consumer_partition);
 
                     if let Err(error) = consumer.consume(consumer_rx) {
                         error!("Error in consumer"; "error" => format!("{:?}", error));

@@ -2,33 +2,32 @@
 #[macro_use] extern crate slog;
 #[macro_use] extern crate slog_scope;
 
-extern crate a2;
-extern crate common;
-extern crate futures;
-extern crate heck;
-extern crate serde_json;
 extern crate tokio_timer;
+extern crate protobuf;
+extern crate common;
+extern crate fcm;
+extern crate futures;
+extern crate hyper;
+extern crate hyper_tls;
+extern crate http;
+extern crate bytes;
 
 mod consumer;
-mod notifier;
+mod requester;
 mod producer;
 
-use consumer::ApnsHandler;
-use std::env;
-
 use common::{config::Config, system::System};
+
+use consumer::HttpRequestHandler;
+use std::env;
 
 lazy_static! {
     pub static ref CONFIG: Config = match env::var("CONFIG") {
         Ok(config_file_location) => Config::parse(&config_file_location),
-        _ => Config::parse("./config/fcm.toml"),
+        _ => Config::parse("./config/http_requester.toml"),
     };
 }
 
 fn main() {
-    System::start(
-        "apns2",
-        ApnsHandler::new(),
-        &CONFIG,
-    );
+    System::start("http_requester", HttpRequestHandler::new(), &CONFIG);
 }

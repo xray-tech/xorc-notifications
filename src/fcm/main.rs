@@ -24,7 +24,7 @@ lazy_static! {
 
 fn main() {
     System::start(
-        "Google Firebase push notification system",
+        "fcm",
         FcmHandler::new(),
         &CONFIG,
     );

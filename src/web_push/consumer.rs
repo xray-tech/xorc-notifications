@@ -1,7 +1,14 @@
 use std::collections::HashMap;
 
-use common::{events::{crm::Application, push_notification::PushNotification},
-             kafka::EventHandler, metrics::*};
+use common::{
+    events::{
+        crm::Application,
+        push_notification::PushNotification,
+        http_request::HttpRequest,
+    },
+    kafka::EventHandler,
+    metrics::*
+};
 
 use futures::{Future, future::ok};
 
@@ -35,11 +42,12 @@ impl WebPushHandler {
 impl EventHandler for WebPushHandler {
     fn handle_notification(
         &self,
+        key: Option<Vec<u8>>,
         event: PushNotification,
     ) -> Box<Future<Item = (), Error = ()> + 'static + Send> {
         let producer = self.producer.clone();
 
-        match self.fcm_api_keys.get(event.get_application_id()) {
+        match self.fcm_api_keys.get(event.get_universe()) {
             Some(entity) => {
                 let timer = RESPONSE_TIMES_HISTOGRAM.start_timer();
                 CALLBACKS_INFLIGHT.inc();
@@ -51,16 +59,25 @@ impl EventHandler for WebPushHandler {
                         CALLBACKS_INFLIGHT.dec();
 
                         match result {
-                            Ok(()) => producer.handle_ok(event),
-                            Err(error) => producer.handle_error(event, &error),
+                            Ok(()) => producer.handle_ok(key, event),
+                            Err(error) => producer.handle_error(key, event, &error),
                         }
                     })
                     .then(|_| ok(()));
 
                 Box::new(notification_send)
             }
-            None => Box::new(self.producer.handle_no_cert(event).then(|_| ok(()))),
+            None => Box::new(self.producer.handle_no_cert(key, event).then(|_| ok(()))),
         }
+    }
+
+    fn handle_http(
+        &self,
+        _: Option<Vec<u8>>,
+        _: HttpRequest
+    ) -> Box<Future<Item=(), Error=()> + 'static + Send> {
+        warn!("We don't handle http request events here");
+        Box::new(ok(()))
     }
 
     fn handle_config(&mut self, application: Application) {

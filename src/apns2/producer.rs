@@ -5,10 +5,7 @@ use a2::{
 
 use common::{
     events::{
-        ResponseAction,
         apple_notification::*,
-        apple_notification::ApnsResult_Reason::*,
-        apple_notification::ApnsResult_Status::*,
         push_notification::PushNotification
     },
     kafka::{
@@ -32,7 +29,12 @@ impl ApnsProducer {
         }
     }
 
-    pub fn handle_ok(&self, mut event: PushNotification) -> DeliveryFuture {
+    pub fn handle_ok(
+        &self,
+        key: Option<Vec<u8>>,
+        mut event: PushNotification
+    ) -> DeliveryFuture
+    {
         CALLBACKS_COUNTER.with_label_values(&["success"]).inc();
 
         info!(
@@ -47,10 +49,16 @@ impl ApnsProducer {
         apns_result.set_status(ApnsResult_Status::Success);
         event.mut_apple().set_result(apns_result);
 
-        self.producer.publish(event, ResponseAction::None)
+        self.producer.publish(key, &event)
     }
 
-    pub fn handle_err(&self, mut event: PushNotification, response: &Response) -> DeliveryFuture {
+    pub fn handle_err(
+        &self,
+        key: Option<Vec<u8>>,
+        mut event: PushNotification,
+        response: &Response
+    ) -> DeliveryFuture
+    {
         let reason = response.error.as_ref()
             .map(|ref error| {
                 format!("{:?}", error.reason)
@@ -88,40 +96,35 @@ impl ApnsProducer {
             }
         }
 
-        let response_action = match apns_result.get_reason() {
-            InternalServerError | Shutdown | ServiceUnavailable | ExpiredProviderToken => {
-                ResponseAction::Retry
-            }
-            DeviceTokenNotForTopic | BadDeviceToken => ResponseAction::UnsubscribeEntity,
-            _ => match apns_result.get_status() {
-                Timeout | Unknown | Forbidden => ResponseAction::Retry,
-                _ => ResponseAction::None,
-            },
-        };
-
         event.mut_apple().set_result(apns_result);
-        self.producer.publish(event, response_action)
+
+        self.producer.publish(key, &event)
     }
 
-    pub fn handle_fatal(&self, mut event: PushNotification, error: &Error) -> DeliveryFuture {
+    pub fn handle_fatal(
+        &self,
+        key: Option<Vec<u8>>,
+        mut event: PushNotification,
+        error: &Error
+    ) -> DeliveryFuture
+    {
         let mut apns_result = ApnsResult::new();
 
         let status = match error {
-            Error::TimeoutError => ApnsResult_Status::Timeout,
+            Error::TimeoutError    => ApnsResult_Status::Timeout,
             Error::ConnectionError => ApnsResult_Status::MissingChannel,
-            _ => ApnsResult_Status::Unknown,
+            _                      => ApnsResult_Status::Unknown,
         };
 
         let status_label = format!("{:?}", status).to_snake_case();
+        CALLBACKS_COUNTER.with_label_values(&[&status_label]).inc();
 
         apns_result.set_status(status);
         apns_result.set_successful(false);
 
-        CALLBACKS_COUNTER.with_label_values(&[&status_label]).inc();
-
         event.mut_apple().set_result(apns_result);
 
-        self.producer.publish(event, ResponseAction::Retry)
+        self.producer.publish(key, &event)
     }
 }
 

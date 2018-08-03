@@ -1,7 +1,7 @@
 use common::{
     events::{
-        ResponseAction,
         google_notification::FcmResult,
+        google_notification::FcmResult_Status,
         google_notification::FcmResult_Status::*,
         push_notification::PushNotification
     },
@@ -23,7 +23,12 @@ impl FcmProducer {
         }
     }
 
-    pub fn handle_no_cert(&self, mut event: PushNotification) -> DeliveryFuture {
+    pub fn handle_no_cert(
+        &self,
+        key: Option<Vec<u8>>,
+        mut event: PushNotification
+    ) -> DeliveryFuture
+    {
         error!(
             "No FCM key set for application";
             &event,
@@ -39,10 +44,16 @@ impl FcmProducer {
 
         event.mut_google().set_response(fcm_result);
 
-        self.producer.publish(event, ResponseAction::Retry)
+        self.producer.publish(key, &event)
     }
 
-    pub fn handle_error(&self, mut event: PushNotification, error: FcmError) -> DeliveryFuture {
+    pub fn handle_error(
+        &self,
+        key: Option<Vec<u8>>,
+        mut event: PushNotification,
+        error: FcmError
+    ) -> DeliveryFuture
+    {
         error!(
             "Error sending a push notification";
             &event,
@@ -52,18 +63,14 @@ impl FcmProducer {
         let mut fcm_result = FcmResult::new();
         fcm_result.set_successful(false);
 
-        let response_action = match error {
+        match error {
             FcmError::ServerError(_) => {
                 fcm_result.set_status(ServerError);
                 CALLBACKS_COUNTER.with_label_values(&["server_error"]).inc();
-
-                ResponseAction::Retry
             }
             FcmError::Unauthorized => {
                 fcm_result.set_status(Unauthorized);
                 CALLBACKS_COUNTER.with_label_values(&["unauthorized"]).inc();
-
-                ResponseAction::UnsubscribeEntity
             }
             FcmError::InvalidMessage(error) => {
                 fcm_result.set_status(InvalidMessage);
@@ -71,18 +78,17 @@ impl FcmProducer {
                     .with_label_values(&["invalid_message"])
                     .inc();
                 fcm_result.set_error(error);
-
-                ResponseAction::None
             }
         };
 
         event.mut_google().set_response(fcm_result);
 
-        self.producer.publish(event, response_action)
+        self.producer.publish(key, &event)
     }
 
     pub fn handle_response(
         &self,
+        key: Option<Vec<u8>>,
         mut event: PushNotification,
         response: &FcmResponse,
     ) -> DeliveryFuture {
@@ -123,36 +129,12 @@ impl FcmProducer {
                             "Error sending a push notification";
                             &event,
                             "successful" => false,
-                            "reason" => error.to_string()
+                            "reason" => error
                         );
 
                         fcm_result.set_successful(false);
 
-                        let (status, status_str) = match error.as_ref() {
-                            "InvalidTtl" => (InvalidTtl, "invalid_ttl"),
-                            "Unavailable" => (Unavailable, "unavailable"),
-                            "MessageTooBig" => (MessageTooBig, "message_too_big"),
-                            "NotRegistered" => (NotRegistered, "not_registered"),
-                            "InvalidDataKey" => (InvalidDataKey, "invalid_data_key"),
-                            "MismatchSenderId" => (MismatchSenderId, "mismatch_sender_id"),
-                            "InvalidPackageName" => {
-                                (InvalidPackageName, "invalid_package_name")
-                            }
-                            "MissingRegistration" => {
-                                (MissingRegistration, "missing_registration")
-                            }
-                            "InvalidRegistration" => {
-                                (InvalidRegistration, "invalid_registration")
-                            }
-                            "DeviceMessageRateExceeded" => {
-                                (DeviceMessageRateExceeded, "device_message_rate_exceeded")
-                            }
-                            "TopicsMessageRateExceeded" => {
-                                (TopicsMessageRateExceeded, "topics_message_rate_exceeded")
-                            }
-                            _ => (Unknown, "unknown_error"),
-                        };
-
+                        let (status, status_str) = Self::error_to_parts(error);
                         CALLBACKS_COUNTER.with_label_values(&[status_str]).inc();
 
                         fcm_result.set_status(status);
@@ -164,24 +146,52 @@ impl FcmProducer {
                     "Error sending a push notification";
                     &event,
                     "successful" => false,
+                    "reason" => "unknown_error"
                 );
 
-                CALLBACKS_COUNTER
-                    .with_label_values(&["unknown_error"])
-                    .inc();
+                CALLBACKS_COUNTER.with_label_values(&["unknown_error"]).inc();
                 fcm_result.set_successful(false);
                 fcm_result.set_status(Unknown);
             }
         }
 
-        let response_action = match fcm_result.get_status() {
-            NotRegistered => ResponseAction::UnsubscribeEntity,
-            _ => ResponseAction::None,
-        };
-
         event.mut_google().set_response(fcm_result);
 
-        self.producer.publish(event, response_action)
+        self.producer.publish(key, &event)
+    }
+
+    fn error_to_parts(error: &str) -> (FcmResult_Status, &'static str) {
+        match error {
+            "InvalidTtl" =>
+                (InvalidTtl, "invalid_ttl"),
+            "Unavailable" =>
+                (Unavailable, "unavailable"),
+            "MessageTooBig" =>
+                (MessageTooBig, "message_too_big"),
+            "NotRegistered" =>
+                (NotRegistered, "not_registered"),
+            "InvalidDataKey" =>
+               (InvalidDataKey, "invalid_data_key"),
+            "MismatchSenderId" =>
+                (MismatchSenderId, "mismatch_sender_id"),
+            "InvalidPackageName" => {
+                (InvalidPackageName, "invalid_package_name")
+            }
+            "MissingRegistration" => {
+                (MissingRegistration, "missing_registration")
+            }
+            "InvalidRegistration" => {
+                (InvalidRegistration, "invalid_registration")
+            }
+            "DeviceMessageRateExceeded" => {
+                (DeviceMessageRateExceeded, "device_message_rate_exceeded")
+            }
+            "TopicsMessageRateExceeded" => {
+                (TopicsMessageRateExceeded, "topics_message_rate_exceeded")
+            }
+            _ =>
+                (Unknown, "unknown_error"),
+        }
     }
 }
 

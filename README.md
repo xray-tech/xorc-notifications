@@ -6,7 +6,8 @@ Kafka.
 - [apns2](src/apns2) for Apple notifications
 - [fcm](src/fcm) for Google notificiations
 - [web_push](src/web_push) for Web push notifications
-- [common](src/common) a library used by all three consumers
+- [http_requester](src/http_requester) for generic HTTP requests
+- [common](src/common) a library used by all four consumers
 
 ## Dependencies
 
@@ -70,34 +71,43 @@ Running web_push:
 > env CONFIG=./config/web_push.toml cargo run --bin web_push
 ```
 
+Running http_requester:
+
+```bash
+> env CONFIG=./config/http_requester.toml cargo run --bin http_requester
+```
+
 ## Configuration
 The system is configuration is handled through a
 [toml](https://github.com/toml-lang/toml) file and a environment variable.
 
 ### Environment variables
 
-variable   | description                     | example
------------|---------------------------------|----------------------------------
-`CONFIG`   | The configuration file location | `/etc/xorc-gateway/config.toml`
+variable     | description                         | example
+-------------|-------------------------------------|----------------------------------
+`CONFIG`     | The configuration file location     | `/etc/xorc-gateway/config.toml`
+`LOG_FORMAT` | Log output format                   | `text` or `json`, default: `text`
+`RUST_ENV`   | The program environment             | `test`, `development`, `staging` or `production`, default: `development`
 
 ### Required options
 
-section       | key            | description                           | example
---------------|----------------|---------------------------------------|----------------------------------
-`[log]`       | `host`         | Graylog address                       | `"graylog.service.consul:12201"`
-`[kafka]`     | `input_topic`  | Notification input topic              | `"production.notifications.apns"`
-`[kafka]`     | `config_topic` | Application configuration topic       | `"production.crm.applications"`
-`[kafka]`     | `output_topic` | Notification response topic           | `"production.oam"`
-`[kafka]`     | `group_id`     | Consumer group ID                     | `"producction.consumers.apns"`
-`[kafka]`     | `brokers`      | Comma-separated list of Kafka brokers | `"kafka1:9092,kafka2:9092"`
+section   | key             | description                                | example
+----------|-----------------|--------------------------------------------|----------------------------------
+`[log]`   | `host`          | Graylog address                            | `"graylog.service.consul:12201"`
+`[kafka]` | `input_topic`   | Notification input topic                   | `"production.notifications.apns"`
+`[kafka]` | `config_topic`  | Application configuration topic            | `"production.crm.applications"`
+`[kafka]` | `output_topic`  | Notification response topic                | `"production.oam"`
+`[kafka]` | `group_id`      | Consumer group ID                          | `"producction.consumers.apns"`
+`[kafka]` | `brokers`       | Comma-separated list of Kafka brokers      | `"kafka1:9092,kafka2:9092"`
+`[kafka]` | `consumer_type` | Decides the input protobuf deserialization | `push_notification` for `PushNotification`, `http_request` for `HttpRequest`
 
 ### Code Architecture
 
-- All three systems use a asynchronous Kafka consumer consuming the `input_topic`,
+- All four systems use a asynchronous Kafka consumer consuming the `input_topic`,
   requesting the external service with a client, parsing the response and
   responding back to the caller.
 - System should implement the `EventHandler`
-  ([push_consumer.rs](src/common/kafka/push_consumer.rs)) and respond with
+  ([request_consumer.rs](src/common/kafka/request_consumer.rs)) and respond with
   `ResponseProducer`
   ([response_producer.rs](src/common/kafka/response_producer.rs)).
 - Consumer should keep track of connections for different applications using

@@ -8,7 +8,8 @@ use self::{
         ApnsResult_Status,
         ApnsResult_Status::*
     },
-    webpush_notification::WebPushResult_Error
+    webpush_notification::WebPushResult_Error,
+    http_request::HttpRequest_HttpVerb::{self, *},
 };
 
 pub mod apple_notification;
@@ -20,6 +21,8 @@ pub mod map_field_entry;
 pub mod push_notification;
 pub mod push_result;
 pub mod webpush_notification;
+pub mod http_request;
+pub mod http_response;
 
 impl From<u16> for ApnsResult_Status {
     fn from(status: u16) -> ApnsResult_Status {
@@ -91,9 +94,15 @@ impl<'a> From<&'a WebPushError> for WebPushResult_Error {
     }
 }
 
-#[derive(Clone, Copy)]
-pub enum ResponseAction {
-    None,
-    UnsubscribeEntity,
-    Retry,
+impl AsRef<str> for HttpRequest_HttpVerb {
+    fn as_ref(&self) -> &str {
+        match self {
+            GET => "GET",
+            POST => "POST",
+            PUT => "PUT",
+            DELETE => "DELETE",
+            PATCH => "PATCH",
+            OPTIONS => "OPTIONS",
+        }
+    }
 }
