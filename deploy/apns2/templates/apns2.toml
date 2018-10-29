@@ -1,0 +1,8 @@
+{{- define "apns2.config" -}}
+[kafka]
+input_topic   = "rpc.push-notification"
+config_topic  = "config.push-notification"
+output_topic  = "rpc.responses"
+group_id      = "{{.Values.kafka.group_prefix}}-apns2"
+brokers       = "{{.Values.kafka.endpoint}}"
+{{- end -}}

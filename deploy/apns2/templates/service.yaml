@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ template "apns2.fullname" . }}
+  labels:
+    app: {{ template "apns2.name" . }}
+    chart: {{ template "apns2.chart" . }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+spec:
+  type: {{ .Values.service.type }}
+  ports:
+    - port: 80
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    app: {{ template "apns2.name" . }}
+    release: {{ .Release.Name }}

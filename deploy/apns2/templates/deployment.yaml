@@ -1,0 +1,73 @@
+apiVersion: apps/v1beta2
+kind: Deployment
+metadata:
+  name: {{ template "apns2.fullname" . }}
+  labels:
+    app: {{ template "apns2.name" . }}
+    chart: {{ template "apns2.chart" . }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app: {{ template "apns2.name" . }}
+      release: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app: {{ template "apns2.name" . }}
+        release: {{ .Release.Name }}
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "80"
+    spec:
+      containers:
+        - name: {{ .Chart.Name }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 80
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /metrics
+              port: http
+          env:
+            - name: PORT
+              value: "80"
+            - name: RUST_BACKTRACE
+              value: "1"
+            - name: CONFIG
+              value: "/etc/xorc-notifications/apns2.toml"
+            - name: LOG_FORMAT
+              value: "json"
+            - name: RUST_ENV
+              value: "{{ .Values.system.environment }}"
+          volumeMounts:
+            - name: config
+              mountPath: /etc/xorc-notifications/apns2.toml
+              subPath: apns2.toml
+          readinessProbe:
+            httpGet:
+              path: /metrics
+              port: http
+          resources:
+{{ toYaml .Values.resources | indent 12 }}
+    {{- with .Values.nodeSelector }}
+      nodeSelector:
+{{ toYaml . | indent 8 }}
+    {{- end }}
+    {{- with .Values.affinity }}
+      affinity:
+{{ toYaml . | indent 8 }}
+    {{- end }}
+    {{- with .Values.tolerations }}
+      tolerations:
+{{ toYaml . | indent 8 }}
+    {{- end }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ template "apns2.fullname" . }}

@@ -1,0 +1,8 @@
+{{- define "fcm.config" -}}
+[kafka]
+input_topic   = "rpc.push-notification"
+config_topic  = "config.push-notification"
+output_topic  = "rpc.responses"
+group_id      = "{{.Values.kafka.group_prefix}}-fcm"
+brokers       = "{{.Values.kafka.endpoint}}"
+{{- end -}}

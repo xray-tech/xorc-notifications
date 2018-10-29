@@ -1,0 +1,19 @@
+version: '3'
+services:
+  zookeeper:
+    logging:
+      driver: "none"
+    image: wurstmeister/zookeeper
+    ports:
+      - "2181:2181"
+  kafka:
+    image: wurstmeister/kafka
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_HOST_NAME: "localhost"
+      KAFKA_BROKER_ID: 666
+      KAFKA_CREATE_TOPICS: "rpc:100:1,config:12:1:compact"

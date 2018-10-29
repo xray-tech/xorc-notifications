@@ -1,0 +1,70 @@
+apiVersion: apps/v1beta2
+kind: Deployment
+metadata:
+  name: {{ include "web-push.fullname" . }}
+  labels:
+    app: {{ include "web-push.name" . }}
+    chart: {{ include "web-push.chart" . }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app: {{ include "web-push.name" . }}
+      release: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app: {{ include "web-push.name" . }}
+        release: {{ .Release.Name }}
+    spec:
+      containers:
+        - name: {{ .Chart.Name }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 80
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /metrics
+              port: http
+          env:
+            - name: PORT
+              value: "80"
+            - name: RUST_BACKTRACE
+              value: "1"
+            - name: CONFIG
+              value: "/etc/xorc-notifications/web_push.toml"
+            - name: LOG_FORMAT
+              value: "json"
+            - name: RUST_ENV
+              value: "{{ .Values.system.environment }}"
+          volumeMounts:
+            - name: config
+              mountPath: /etc/xorc-notifications/web_push.toml
+              subPath: web_push.toml
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+          resources:
+{{ toYaml .Values.resources | indent 12 }}
+    {{- with .Values.nodeSelector }}
+      nodeSelector:
+{{ toYaml . | indent 8 }}
+    {{- end }}
+    {{- with .Values.affinity }}
+      affinity:
+{{ toYaml . | indent 8 }}
+    {{- end }}
+    {{- with .Values.tolerations }}
+      tolerations:
+{{ toYaml . | indent 8 }}
+    {{- end }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ template "web-push.fullname" . }}
