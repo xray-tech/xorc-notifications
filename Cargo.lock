@@ -1885,7 +1885,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "xorc_notifications"
+name = "xorc-notifications"
 version = "0.1.0"
 dependencies = [
  "a2 0.3.3 (registry+https://github.com/rust-lang/crates.io-index)",
