@@ -1,7 +1,14 @@
 # XORC Notifications
 
-Systems talking to external services, getting input from and answering back to
-Kafka.
+[![Travis Build Status](https://travis-ci.org/xray-tech/xorc-notifications.svg?branch=master)](https://travis-ci.org/xray-tech/xorc-notifications)
+[![MIT licensed](https://img.shields.io/badge/license-apache-blue.svg)](./LICENSE)
+
+A collection of services consuming [PushNotification
+events](https://github.com/xray-tech/xorc-events/blob/master/notification/push_notification.proto)
+to send push notifications to apns2/fcm/web push and [Application
+events](https://github.com/xray-tech/xorc-events/blob/master/application.proto) to receive configuration.
+
+The systems are by default multi-tenant for sending push notifications to multiple different applications.
 
 - [apns2](src/apns2) for Apple notifications
 - [fcm](src/fcm) for Google notificiations
@@ -11,7 +18,7 @@ Kafka.
 
 ## Dependencies
 
-XORC Notifications are written with Rust and should always be possible to compile
+The systems are written with Rust and it should always be possible to compile
 with the latest stable version. The de-facto way of getting the latest Rust is
 with [rustup](https://rustup.rs/):
 
@@ -25,9 +32,9 @@ To check that everything works:
 
 ```bash
 > rustc --version
-rustc 1.26.0 (a77568041 2018-05-07)
+rustc 1.30.0 (da5f414c2 2018-10-24)
 > cargo --version
-cargo 1.26.0 (0e7c5a931 2018-04-06)
+cargo 1.30.0 (36d96825d 2018-10-24)
 ```
 
 Some of the crates used in the project have dependencies to certain system
@@ -41,9 +48,9 @@ libraries and tools, for Ubuntu 18.04 you get them with:
 
 The project uses [Protocol
 Buffers](https://developers.google.com/protocol-buffers/) for event schemas.
-Building the project should generate the corresponding Rust structs to be used
-in the code. By default the protobuf classes are included as a submodule, which
-must be imported to the project tree:
+`cargo build` should generate the corresponding Rust structs to be used in the
+code. By default the protobuf classes are included as a submodule, which must be
+imported to the project tree:
 
 ```bash
 > git submodule update --init
@@ -90,56 +97,6 @@ cargo build --release --examples
 
 The executables are in `target/release` directory.
 
-### Send HTTP request
-
-A tool for triggering HTTP requests using the http_requester. To run locally,
-one must have Kafka, Zookeeper and http\_requester running.
-
-```bash
-docker-compose up --build
-cargo run --bin http_requester
-```
-
-```bash
-./target/release/examples/send_http_request --help
-
-HTTP Request Sender 4.20
-Censhare Techlab
-Sends HTTP requests through Kafka and http_requester
-
-USAGE:
-    send_http_request <URI> [OPTIONS]
-
-FLAGS:
-    -h, --help       Prints help information
-    -V, --version    Prints version information
-
-OPTIONS:
-    -d, --data <DATA>                            HTTP POST data
-    -H, --header <HeaderName: HeaderValue>...
-    -s, --kafka_server <SERVER:PORT>             Kafka server to connect to [default: localhost:9092]
-    -t, --kafka_topic <TOPIC>                    Kafka topic to write to [default: test.http]
-    -X, --request <VERB>                         HTTP verb to use with the request [default: GET]
-        --timeout <MILLIS>                       Maximum time allowed to wait for response [default: 2000]
-
-ARGS:
-    <URI>    The uri to connect
-```
-
-An example run:
-
-```bash
-./target/release/examples/send_http_request http://httpbin.org/post -X POST -H "Content-Type: application/json" -H "Foobar: LolOmg" --data '{"foo":"bar"}'
-```
-
-The output from the http_requester should be something like:
-
-```bash
-  Aug 08 16:20:00.000 INFO Successful HTTP request, event_source: test_script, request_type: POST, request_body: {"foo":"bar"}, status_code: 200, curl: curl -X POST --data "{\"foo\":\"bar\"}" -H "Content-Type: application/json" -H "Foobar: LolOmg" http://httpbin.org/post
-```
-
-The response event is in the defined output topic in Kafka.
-
 ## Configuration
 The system is configuration is handled through a
 [toml](https://github.com/toml-lang/toml) file and a environment variable.
@@ -148,7 +105,7 @@ The system is configuration is handled through a
 
 variable     | description                         | example
 -------------|-------------------------------------|----------------------------------
-`CONFIG`     | The configuration file location     | `/etc/xorc-gateway/config.toml`
+`CONFIG`     | The configuration file location     | `/etc/xorc-notifications/config.toml`
 `LOG_FORMAT` | Log output format                   | `text` or `json`, default: `text`
 `RUST_ENV`   | The program environment             | `test`, `development`, `staging` or `production`, default: `development`
 
@@ -156,17 +113,16 @@ variable     | description                         | example
 
 section   | key             | description                                | example
 ----------|-----------------|--------------------------------------------|----------------------------------
-`[log]`   | `host`          | Graylog address                            | `"graylog.service.consul:12201"`
 `[kafka]` | `input_topic`   | Notification input topic                   | `"production.notifications.apns"`
 `[kafka]` | `config_topic`  | Application configuration topic            | `"production.applications"`
 `[kafka]` | `output_topic`  | Notification response topic                | `"production.oam"`
-`[kafka]` | `group_id`      | Consumer group ID                          | `"producction.consumers.apns"`
+`[kafka]` | `group_id`      | Consumer group ID                          | `"production.consumers.apns"`
 `[kafka]` | `brokers`       | Comma-separated list of Kafka brokers      | `"kafka1:9092,kafka2:9092"`
 `[kafka]` | `consumer_type` | Decides the input protobuf deserialization | `push_notification` for `PushNotification`, `http_request` for `HttpRequest`
 
 ### Code Architecture
 
-- All four systems use a asynchronous Kafka consumer consuming the `input_topic`,
+- All four systems use an asynchronous Kafka consumer consuming the `input_topic`,
   requesting the external service with a client, parsing the response and
   responding back to the caller.
 - System should implement the `EventHandler`

@@ -1,0 +1,19 @@
+language: rust
+before_install:
+  - sudo apt-get -y update
+  - sudo apt-get -y install libssl-dev protobuf-compile libffi-dev build-essential python
+
+matrix:
+  include:
+    - rust: beta
+    - rust: stable
+
+cache:
+  apt: true
+  directories:
+    - target/debug/deps
+    - target/debug/build
+
+script:
+  - cargo build
+  - cargo test
