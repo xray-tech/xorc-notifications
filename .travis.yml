@@ -1,7 +1,7 @@
 language: rust
 before_install:
   - sudo apt-get -y update
-  - sudo apt-get -y install libssl-dev protobuf-compile libffi-dev build-essential python
+  - sudo apt-get -y install libssl-dev protobuf-compiler libffi-dev build-essential python
 
 matrix:
   include:
