@@ -2,11 +2,14 @@ language: rust
 before_install:
   - sudo apt-get -y update
   - sudo apt-get -y install libssl-dev protobuf-compiler libffi-dev build-essential python
+env:
+  - RUST_BACKTRACE=1
 
 matrix:
   include:
     - rust: beta
     - rust: stable
+    - rust: nightly
 
 cache:
   apt: true
