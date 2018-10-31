@@ -25,20 +25,26 @@ lazy_static! {
 }
 
 pub trait EventHandler {
+    /// True if the consumer should accept the incoming event.
     fn accepts(&self, event: &PushNotification) -> bool;
 
+    /// Try to send a push notification. If key parameter is set, the response
+    /// will be sent with the same routing key.
     fn handle_notification(
         &self,
         key: Option<Vec<u8>>,
         event: PushNotification,
     ) -> Box<Future<Item = (), Error = ()> + 'static + Send>;
 
+    /// Try to send a http request. If key parameter is set, the response
+    /// will be sent with the same routing key.
     fn handle_http(
         &self,
         key: Option<Vec<u8>>,
         event: HttpRequest,
     ) -> Box<Future<Item = (), Error = ()> + 'static + Send>;
 
+    /// Handle tenant configuration for connection setup.
     fn handle_config(
         &self,
         id: &str,
@@ -67,6 +73,7 @@ impl<H: EventHandler + Send + Sync + 'static> RequestConsumer<H> {
         }
     }
 
+    /// Consuming the configuration topic for tenant connection setup. A message through `control` stops the consumer.
     pub fn handle_configs(&self, control: oneshot::Receiver<()>) -> Result<(), ()> {
         let consumer: StreamConsumer = ClientConfig::new()
             .set("group.id", &self.group_id)

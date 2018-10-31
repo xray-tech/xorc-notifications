@@ -21,6 +21,8 @@ pub enum LogAction {
 pub struct Logger;
 
 impl Logger {
+    /// Builds a new logger. Depending on `LOG_FORMAT` environment variable,
+    /// either produces colorful text or JSON.
     pub fn build(application_name: &'static str) -> slog::Logger {
         let drain = match env::var("LOG_FORMAT") {
             Ok(ref val) if val == "json" => {

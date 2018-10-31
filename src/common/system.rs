@@ -11,6 +11,7 @@ use slog_scope;
 pub struct System;
 
 impl System {
+    /// Starts the push system for given handler and configuration.
     pub fn start<H>(name: &'static str, handler: H, config: &Config)
     where
         H: EventHandler + Send + Sync + 'static,

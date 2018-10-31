@@ -21,6 +21,7 @@ pub struct ResponseProducer {
 }
 
 impl ResponseProducer {
+    /// Producer to send responses to notification events.
     pub fn new(config: &Config) -> ResponseProducer {
         let producer = ClientConfig::new()
             .set("bootstrap.servers", &config.brokers)
@@ -36,6 +37,8 @@ impl ResponseProducer {
         ResponseProducer { kafka }
     }
 
+    /// Send the push response. If key is set, sets the routing key in the Kafka
+    /// message.
     pub fn publish(
         &self,
         key: Option<Vec<u8>>,

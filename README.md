@@ -1,7 +1,7 @@
 # XORC Notifications
 
-[![Travis Build Status](https://api.travis-ci.com/xray-tech/xorc-notifications.svg?branch=master)](https://travis-ci.com/xray-tech/xorc-notifications)
-[![MIT licensed](https://img.shields.io/badge/license-apache-blue.svg)](./LICENSE)
+[![Travis Build Status](https://api.travis-ci.org/pimeys/a2.svg?branch=master)](https://travis-ci.org/xray-tech/xorc-notifications)
+[![Apache licensed](https://img.shields.io/badge/license-apache-blue.svg)](./LICENSE)
 
 A collection of services consuming [PushNotification
 events](https://github.com/xray-tech/xorc-events/blob/master/notification/push_notification.proto)

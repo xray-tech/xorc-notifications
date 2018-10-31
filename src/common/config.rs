@@ -9,6 +9,7 @@ pub struct Config {
 }
 
 impl Config {
+    /// Load TOML-formatted configuration from `path`.
     pub fn parse(path: &str) -> Config {
         let mut config_toml = String::new();
 
