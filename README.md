@@ -1,7 +1,7 @@
 # XORC Notifications
 
 [![Travis Build Status](https://api.travis-ci.org/xray-tech/xorc-notifications.svg?branch=master)](https://travis-ci.org/xray-tech/xorc-notifications)
-[![Crates.io Version](https://img.shields.io/crates/v/xorc-notifications.svg?style=flat-square)][crates.io]
+[![crates.io](https://img.shields.io/crates/v/xorc-notifications.svg?style=flat-square)](https://crates.io/crates/xorc-notifications)
 [![Apache licensed](https://img.shields.io/badge/license-apache-blue.svg)](./LICENSE)
 
 A collection of services consuming [PushNotification
