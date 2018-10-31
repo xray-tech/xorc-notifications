@@ -1,7 +1,8 @@
 language: rust
 before_install:
+  - sudo add-apt-repository ppa:maarten-fonville/protobuf
   - sudo apt-get -y update
-  - sudo apt-get -y install libssl-dev protobuf-compiler libffi-dev build-essential python
+  - sudo apt-get -y install libssl-dev protobuf libffi-dev build-essential python wget
 env:
   - RUST_BACKTRACE=1
 
