@@ -19,5 +19,4 @@ cache:
     - target/debug/build
 
 script:
-  - cargo build
   - cargo test
