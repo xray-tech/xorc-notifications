@@ -17,6 +17,36 @@ The systems are by default multi-tenant for sending push notifications to multip
 - [http_requester](src/http_requester) for generic HTTP requests
 - [common](src/common) a library used by all four consumers
 
+## Installation
+
+The consumers can be installed through Cargo:
+
+```bash
+> cargo install xorc-notifications
+```
+
+It installs four different binaries: `apns2`, `fcm`, `web_push` and
+`http_requester`, all named after the systems they present.
+
+### Environment variables
+
+variable     | description                         | example
+-------------|-------------------------------------|----------------------------------
+`CONFIG`     | The configuration file location     | `/etc/xorc-notifications/config.toml`
+`LOG_FORMAT` | Log output format                   | `text` or `json`, default: `text`
+`RUST_ENV`   | The program environment             | `test`, `development`, `staging` or `production`, default: `development`
+
+### Required options
+
+section   | key             | description                                | example
+----------|-----------------|--------------------------------------------|----------------------------------
+`[kafka]` | `input_topic`   | Notification input topic                   | `"production.notifications.apns"`
+`[kafka]` | `config_topic`  | Application configuration topic            | `"production.applications"`
+`[kafka]` | `output_topic`  | Notification response topic                | `"production.oam"`
+`[kafka]` | `group_id`      | Consumer group ID                          | `"production.consumers.apns"`
+`[kafka]` | `brokers`       | Comma-separated list of Kafka brokers      | `"kafka1:9092,kafka2:9092"`
+`[kafka]` | `consumer_type` | Decides the input protobuf deserialization | `push_notification` for `PushNotification`, `http_request` for `HttpRequest`
+
 ## Dependencies
 
 The systems are written with Rust and it should always be possible to compile
@@ -101,25 +131,6 @@ The executables are in `target/release` directory.
 ## Configuration
 The system is configuration is handled through a
 [toml](https://github.com/toml-lang/toml) file and a environment variable.
-
-### Environment variables
-
-variable     | description                         | example
--------------|-------------------------------------|----------------------------------
-`CONFIG`     | The configuration file location     | `/etc/xorc-notifications/config.toml`
-`LOG_FORMAT` | Log output format                   | `text` or `json`, default: `text`
-`RUST_ENV`   | The program environment             | `test`, `development`, `staging` or `production`, default: `development`
-
-### Required options
-
-section   | key             | description                                | example
-----------|-----------------|--------------------------------------------|----------------------------------
-`[kafka]` | `input_topic`   | Notification input topic                   | `"production.notifications.apns"`
-`[kafka]` | `config_topic`  | Application configuration topic            | `"production.applications"`
-`[kafka]` | `output_topic`  | Notification response topic                | `"production.oam"`
-`[kafka]` | `group_id`      | Consumer group ID                          | `"production.consumers.apns"`
-`[kafka]` | `brokers`       | Comma-separated list of Kafka brokers      | `"kafka1:9092,kafka2:9092"`
-`[kafka]` | `consumer_type` | Decides the input protobuf deserialization | `push_notification` for `PushNotification`, `http_request` for `HttpRequest`
 
 ### Code Architecture
 
