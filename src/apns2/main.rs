@@ -2,18 +2,11 @@
 #[macro_use] extern crate slog;
 #[macro_use] extern crate slog_scope;
 
-extern crate a2;
-extern crate common;
-extern crate futures;
-extern crate heck;
-extern crate serde_json;
-extern crate tokio_timer;
-
 mod consumer;
 mod notifier;
 mod producer;
 
-use consumer::ApnsHandler;
+use crate::consumer::ApnsHandler;
 use std::env;
 
 use common::{config::Config, system::System};

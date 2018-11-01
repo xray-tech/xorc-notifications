@@ -7,7 +7,7 @@ use rdkafka::{
     },
 };
 
-use kafka::Config;
+use crate::kafka::Config;
 use protobuf::Message;
 use std::sync::Arc;
 
@@ -42,7 +42,7 @@ impl ResponseProducer {
     pub fn publish(
         &self,
         key: Option<Vec<u8>>,
-        event: &Message,
+        event: &dyn Message,
     ) -> DeliveryFuture {
         let payload = event.write_to_bytes().unwrap();
 

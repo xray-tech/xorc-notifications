@@ -1,10 +1,3 @@
-extern crate common;
-extern crate clap;
-extern crate rdkafka;
-extern crate chrono;
-extern crate protobuf;
-extern crate futures;
-
 use rdkafka::{
     config::ClientConfig,
     producer::future_producer::{

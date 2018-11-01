@@ -13,8 +13,8 @@ use common::{
 use futures::{Future, future::ok};
 
 use std::sync::RwLock;
-use notifier::Notifier;
-use producer::FcmProducer;
+use crate::notifier::Notifier;
+use crate::producer::FcmProducer;
 
 pub struct FcmHandler {
     producer: FcmProducer,
@@ -56,7 +56,7 @@ impl EventHandler for FcmHandler {
         &self,
         key: Option<Vec<u8>>,
         event: PushNotification,
-    ) -> Box<Future<Item = (), Error = ()> + 'static + Send> {
+    ) -> Box<dyn Future<Item = (), Error = ()> + 'static + Send> {
         let timer = RESPONSE_TIMES_HISTOGRAM.start_timer();
         CALLBACKS_INFLIGHT.inc();
 
@@ -86,7 +86,7 @@ impl EventHandler for FcmHandler {
         &self,
         _: Option<Vec<u8>>,
         _: HttpRequest
-    ) -> Box<Future<Item=(), Error=()> + 'static + Send> {
+    ) -> Box<dyn Future<Item=(), Error=()> + 'static + Send> {
         warn!("We don't handle http request events here");
         Box::new(ok(()))
     }

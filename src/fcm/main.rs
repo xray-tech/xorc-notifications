@@ -2,17 +2,12 @@
 #[macro_use] extern crate slog;
 #[macro_use] extern crate slog_scope;
 
-extern crate common;
-extern crate fcm;
-extern crate futures;
-
 mod consumer;
 mod notifier;
 mod producer;
 
 use common::{config::Config, system::System};
-
-use consumer::FcmHandler;
+use crate::consumer::FcmHandler;
 use std::env;
 
 lazy_static! {

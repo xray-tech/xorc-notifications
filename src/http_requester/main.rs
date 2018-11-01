@@ -2,24 +2,12 @@
 #[macro_use] extern crate slog;
 #[macro_use] extern crate slog_scope;
 
-extern crate tokio_timer;
-extern crate protobuf;
-extern crate common;
-extern crate fcm;
-extern crate futures;
-extern crate hyper;
-extern crate hyper_tls;
-extern crate http;
-extern crate bytes;
-extern crate chrono;
-
 mod consumer;
 mod requester;
 mod producer;
 
 use common::{config::Config, system::System};
-
-use consumer::HttpRequestHandler;
+use crate::consumer::HttpRequestHandler;
 use std::env;
 
 lazy_static! {

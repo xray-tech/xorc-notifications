@@ -9,8 +9,8 @@ use common::{
 };
 
 use futures::{Future, future::ok};
-use requester::Requester;
-use producer::HttpResponseProducer;
+use crate::requester::Requester;
+use crate::producer::HttpResponseProducer;
 
 pub struct HttpRequestHandler {
     producer: HttpResponseProducer,
@@ -36,7 +36,7 @@ impl EventHandler for HttpRequestHandler {
         &self,
         _: Option<Vec<u8>>,
         _: PushNotification,
-    ) -> Box<Future<Item = (), Error = ()> + 'static + Send> {
+    ) -> Box<dyn Future<Item = (), Error = ()> + 'static + Send> {
         warn!("We don't handle push notification events here");
         Box::new(ok(()))
     }
@@ -45,7 +45,7 @@ impl EventHandler for HttpRequestHandler {
         &self,
         key: Option<Vec<u8>>,
         event: HttpRequest,
-    ) -> Box<Future<Item = (), Error = ()> + 'static + Send> {
+    ) -> Box<dyn Future<Item = (), Error = ()> + 'static + Send> {
         let producer = self.producer.clone();
 
         let timer = RESPONSE_TIMES_HISTOGRAM.start_timer();

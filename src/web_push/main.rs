@@ -2,19 +2,12 @@
 #[macro_use] extern crate slog;
 #[macro_use] extern crate slog_scope;
 
-extern crate common;
-extern crate futures;
-extern crate hyper;
-extern crate tokio_signal;
-extern crate web_push;
-
 mod consumer;
 mod notifier;
 mod producer;
 
 use common::{config::Config, system::System};
-
-use consumer::WebPushHandler;
+use crate::consumer::WebPushHandler;
 use std::env;
 
 lazy_static! {

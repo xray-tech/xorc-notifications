@@ -5,8 +5,8 @@ use rdkafka::{
     consumer::{CommitMode, Consumer, stream_consumer::StreamConsumer},
     topic_partition_list::{Offset, TopicPartitionList},
 };
-use kafka::Config;
-use events::{
+use crate::kafka::Config;
+use crate::events::{
     application::Application,
     push_notification::PushNotification,
     http_request::HttpRequest,
@@ -34,7 +34,7 @@ pub trait EventHandler {
         &self,
         key: Option<Vec<u8>>,
         event: PushNotification,
-    ) -> Box<Future<Item = (), Error = ()> + 'static + Send>;
+    ) -> Box<dyn Future<Item = (), Error = ()> + 'static + Send>;
 
     /// Try to send a http request. If key parameter is set, the response
     /// will be sent with the same routing key.
@@ -42,7 +42,7 @@ pub trait EventHandler {
         &self,
         key: Option<Vec<u8>>,
         event: HttpRequest,
-    ) -> Box<Future<Item = (), Error = ()> + 'static + Send>;
+    ) -> Box<dyn Future<Item = (), Error = ()> + 'static + Send>;
 
     /// Handle tenant configuration for connection setup.
     fn handle_config(
@@ -98,7 +98,7 @@ impl<H: EventHandler + Send + Sync + 'static> RequestConsumer<H> {
 
         info!("Starting config processing");
 
-        self.handler(consumer, control, &|msg: BorrowedMessage| {
+        self.handler(consumer, control, &|msg: BorrowedMessage<'_>| {
             let convert_key = msg.key().and_then(|key| {
                 String::from_utf8(key.to_vec()).ok()
             });
@@ -162,7 +162,7 @@ impl<H: EventHandler + Send + Sync + 'static> RequestConsumer<H> {
 
         info!("Starting events processing");
 
-        self.handler(consumer, control, &|msg: BorrowedMessage| {
+        self.handler(consumer, control, &|msg: BorrowedMessage<'_>| {
             debug!(
                 "Got message";
                 "topic" => msg.topic(),
@@ -197,7 +197,7 @@ impl<H: EventHandler + Send + Sync + 'static> RequestConsumer<H> {
         &self,
         consumer: StreamConsumer,
         control: oneshot::Receiver<()>,
-        process_event: &Fn(BorrowedMessage) -> Result<(), ()>
+        process_event: &dyn Fn(BorrowedMessage<'_>) -> Result<(), ()>
     ) -> Result<(), ()> {
         let mut core = Runtime::new().unwrap();
 
@@ -219,7 +219,7 @@ impl<H: EventHandler + Send + Sync + 'static> RequestConsumer<H> {
         Ok(())
     }
 
-    fn handle_push(&self, msg: &BorrowedMessage) {
+    fn handle_push(&self, msg: &BorrowedMessage<'_>) {
         let event_parsing = msg.payload()
             .and_then(|payload| parse_from_bytes::<PushNotification>(payload).ok());
 
@@ -242,7 +242,7 @@ impl<H: EventHandler + Send + Sync + 'static> RequestConsumer<H> {
         }
     }
 
-    fn handle_http(&self, msg: &BorrowedMessage) {
+    fn handle_http(&self, msg: &BorrowedMessage<'_>) {
         let event_parsing = msg.payload()
             .and_then(|payload| parse_from_bytes::<HttpRequest>(payload).ok());
 
@@ -261,7 +261,7 @@ impl<H: EventHandler + Send + Sync + 'static> RequestConsumer<H> {
         }
     }
 
-    fn handle_config(&self, msg_id: &str, msg: Option<&BorrowedMessage>) {
+    fn handle_config(&self, msg_id: &str, msg: Option<&BorrowedMessage<'_>>) {
         let event = msg
             .and_then(|msg| msg.payload())
             .and_then(|payload| parse_from_bytes::<Application>(&payload).ok());

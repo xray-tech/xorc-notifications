@@ -11,7 +11,7 @@ use common::{
 };
 
 use fcm::response::{FcmError, FcmResponse, ErrorReason::*};
-use CONFIG;
+use crate::CONFIG;
 
 pub struct FcmProducer {
     producer: ResponseProducer,

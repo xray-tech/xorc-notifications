@@ -10,7 +10,7 @@ use common::{
     metrics::CALLBACKS_COUNTER
 };
 
-use CONFIG;
+use crate::CONFIG;
 
 use web_push::{*, WebPushError::*};
 
