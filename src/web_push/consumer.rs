@@ -12,8 +12,8 @@ use common::{
 
 use futures::{Future, future::ok};
 use std::sync::RwLock;
-use notifier::Notifier;
-use producer::WebPushProducer;
+use crate::notifier::Notifier;
+use crate::producer::WebPushProducer;
 
 struct ApiKey {
     fcm_api_key: Option<String>,
@@ -59,7 +59,7 @@ impl EventHandler for WebPushHandler {
         &self,
         key: Option<Vec<u8>>,
         event: PushNotification,
-    ) -> Box<Future<Item = (), Error = ()> + 'static + Send> {
+    ) -> Box<dyn Future<Item = (), Error = ()> + 'static + Send> {
         let producer = self.producer.clone();
 
         match self.fcm_api_keys.read().unwrap().get(event.get_universe()) {
@@ -90,7 +90,7 @@ impl EventHandler for WebPushHandler {
         &self,
         _: Option<Vec<u8>>,
         _: HttpRequest
-    ) -> Box<Future<Item=(), Error=()> + 'static + Send> {
+    ) -> Box<dyn Future<Item=(), Error=()> + 'static + Send> {
         warn!("We don't handle http request events here");
         Box::new(ok(()))
     }

@@ -25,8 +25,8 @@ use common::{
 
 use a2::{client::Endpoint, error::Error};
 
-use notifier::Notifier;
-use producer::ApnsProducer;
+use crate::notifier::Notifier;
+use crate::producer::ApnsProducer;
 
 pub struct ApnsHandler {
     producer: ApnsProducer,
@@ -110,7 +110,7 @@ impl EventHandler for ApnsHandler {
         &self,
         key: Option<Vec<u8>>,
         event: PushNotification,
-    ) -> Box<Future<Item = (), Error = ()> + 'static + Send> {
+    ) -> Box<dyn Future<Item = (), Error = ()> + 'static + Send> {
         let producer = self.producer.clone();
         let timer = RESPONSE_TIMES_HISTOGRAM.start_timer();
 
@@ -145,7 +145,7 @@ impl EventHandler for ApnsHandler {
         &self,
         _: Option<Vec<u8>>,
         _: HttpRequest,
-    ) -> Box<Future<Item=(), Error=()> + 'static + Send> {
+    ) -> Box<dyn Future<Item=(), Error=()> + 'static + Send> {
         warn!("We don't handle http request events here");
         Box::new(ok(()))
     }

@@ -1,4 +1,4 @@
-use kafka;
+use crate::kafka;
 use toml;
 
 use std::{fs::File, io::prelude::*};

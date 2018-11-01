@@ -20,7 +20,7 @@ use common::{
 };
 
 use heck::SnakeCase;
-use CONFIG;
+use crate::CONFIG;
 
 pub struct ApnsProducer {
     producer: ResponseProducer,

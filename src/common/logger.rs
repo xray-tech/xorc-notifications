@@ -4,7 +4,7 @@ use slog_term::{TermDecorator, CompactFormat};
 use slog_async::Async;
 use slog_json::Json;
 
-use events::{
+use crate::events::{
     push_notification::PushNotification,
     http_response::HttpResponse,
     http_request::HttpRequest,
@@ -47,7 +47,7 @@ impl Logger {
 }
 
 impl KV for PushNotification {
-    fn serialize(&self, _record: &Record, serializer: &mut Serializer) -> slog::Result {
+    fn serialize(&self, _record: &Record<'_>, serializer: &mut dyn Serializer) -> slog::Result {
         serializer.emit_str("device_token", self.get_device_token())?;
         serializer.emit_str("universe", self.get_universe())?;
         serializer.emit_str("correlation_id", self.get_header().get_correlation_id())?;
@@ -57,7 +57,7 @@ impl KV for PushNotification {
 }
 
 impl slog::Value for HttpResponse {
-    fn serialize(&self, _record: &Record, _key: Key, serializer: &mut Serializer) -> slog::Result {
+    fn serialize(&self, _record: &Record<'_>, _key: Key, serializer: &mut dyn Serializer) -> slog::Result {
         if self.has_payload() {
             serializer.emit_str(
                 "status_code",
@@ -73,7 +73,7 @@ impl slog::Value for HttpResponse {
 }
 
 impl slog::Value for HttpRequest {
-    fn serialize(&self, _record: &Record, _key: Key, serializer: &mut Serializer) -> slog::Result {
+    fn serialize(&self, _record: &Record<'_>, _key: Key, serializer: &mut dyn Serializer) -> slog::Result {
         serializer.emit_str("correlation_id", self.get_header().get_correlation_id())?;
         serializer.emit_str("request_type", self.get_request_type().as_ref())?;
         serializer.emit_str("request_body", self.get_body())?;
@@ -114,7 +114,7 @@ impl slog::Value for HttpRequest {
 }
 
 impl KV for Application {
-    fn serialize(&self, _record: &Record, serializer: &mut Serializer) -> slog::Result {
+    fn serialize(&self, _record: &Record<'_>, serializer: &mut dyn Serializer) -> slog::Result {
         serializer.emit_str("app_id", self.get_id())?;
 
         if self.has_organization() {

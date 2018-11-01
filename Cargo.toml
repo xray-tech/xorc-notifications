@@ -4,6 +4,7 @@ version = "0.1.0"
 authors = ["Julius de Bruijn <julius@nauk.io>"]
 license = "Apache-2.0"
 readme  = "README.md"
+edition = "2018"
 description = "A consumer to send push notifications from Kafka"
 keywords    = ["apns", "fcm", "web-push", "consumer", "kafka"]
 repository  = "https://github.com/xray-tech/xorc-notifications"
