@@ -10,23 +10,26 @@ use common::{
     metrics::*
 };
 
-use futures::{Future, future::ok};
+use futures::{future::Future, future::{ok, err}, FutureExt};
 
-use std::sync::RwLock;
-use notifier::Notifier;
-use producer::FcmProducer;
+use std::sync::{RwLock, Arc, Mutex};
+use std::thread;
+use crate::notifier::Notifier;
+use crate::producer::FcmProducer;
+
+use super::common::kafka::{FutureMime};
 
 pub struct FcmHandler {
-    producer: FcmProducer,
+    producer: Arc<FcmProducer>,
     api_keys: RwLock<HashMap<String, String>>,
-    notifier: Notifier,
+    notifier: Arc<Notifier>,
 }
 
 impl FcmHandler {
     pub fn new() -> FcmHandler {
         let api_keys = RwLock::new(HashMap::new());
-        let producer = FcmProducer::new();
-        let notifier = Notifier::new();
+        let producer = Arc::new(FcmProducer::new());
+        let notifier = Arc::new(Notifier::new());
 
         FcmHandler {
             producer,
@@ -56,29 +59,33 @@ impl EventHandler for FcmHandler {
         &self,
         key: Option<Vec<u8>>,
         event: PushNotification,
-    ) -> Box<Future<Item = (), Error = ()> + 'static + Send> {
+    ) -> Box<dyn Future<Output=Result<(),()>> + 'static + Send + Unpin> {
         let timer = RESPONSE_TIMES_HISTOGRAM.start_timer();
         CALLBACKS_INFLIGHT.inc();
 
         if let Some(api_key) = self.api_keys.read().unwrap().get(event.get_universe()) {
             let producer = self.producer.clone();
-
-            Box::new(
-                self.notifier
-                    .notify(&event, api_key)
+            let noti = self.notifier.clone();
+            let mute = Arc::new(Mutex::<Option<Result<(),()>>>::new(None));
+            let res = mute.clone();
+            let key = api_key.clone();
+            let even = event.clone();
+            thread::spawn(|| async move {
+                let even = even;
+                let a = noti.notify(&even, &key.clone())
                     .then(move |result| {
                         timer.observe_duration();
                         CALLBACKS_INFLIGHT.dec();
-
                         match result {
-                            Ok(response) => producer.handle_response(key, event, response),
-                            Err(error) => producer.handle_error(key, event, error),
+                            Ok(response) => producer.handle_response(Some(Vec::from(key.as_bytes())), event, response),
+                            Err(error) => producer.handle_error(Some(Vec::from(key.as_bytes())), event, error),
                         }
-                    })
-                    .then(|_| ok(())),
-            )
+                    }).then(|_| ok(())).await;
+                *mute.lock().unwrap() = Some(a);
+            });
+            Box::new(FutureMime::new(res))
         } else {
-            Box::new(self.producer.handle_no_cert(key, event).then(|_| ok(())))
+            Box::new(self.producer.handle_no_cert(key, event).then(|_| err(())))
         }
     }
 
@@ -86,9 +93,9 @@ impl EventHandler for FcmHandler {
         &self,
         _: Option<Vec<u8>>,
         _: HttpRequest
-    ) -> Box<Future<Item=(), Error=()> + 'static + Send> {
+    ) -> Box<dyn Future<Output=Result<(),()>> + 'static + Send+ Unpin> {
         warn!("We don't handle http request events here");
-        Box::new(ok(()))
+        Box::new(err(()))
     }
 
     fn handle_config(&self, id: &str, application: Option<Application>) {

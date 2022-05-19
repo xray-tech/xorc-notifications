@@ -1,11 +1,10 @@
 use chan_signal::{notify, Signal};
-use config::Config;
-use kafka::EventHandler;
-use kafka::RequestConsumer;
-use metrics::StatisticsServer;
+use crate::config::Config;
+use crate::kafka::{EventHandler, RequestConsumer};
+use crate::metrics::StatisticsServer;
 use std::{thread, thread::JoinHandle, sync::Arc};
-use futures::sync::oneshot;
-use logger::Logger;
+use futures::channel::oneshot;
+use crate::logger::Logger;
 use slog_scope;
 
 pub struct System;

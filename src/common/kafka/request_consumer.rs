@@ -5,23 +5,28 @@ use rdkafka::{
     consumer::{CommitMode, Consumer, stream_consumer::StreamConsumer},
     topic_partition_list::{Offset, TopicPartitionList},
 };
-use kafka::Config;
-use events::{
+use crate::kafka::{Config};
+use crate::events::{
     application::Application,
     push_notification::PushNotification,
     http_request::HttpRequest,
     rpc_decoder::RequestWrapper,
 };
-use futures::{Future, Stream, sync::oneshot};
+use futures::{Future, FutureExt, channel::oneshot, StreamExt, select};
 use protobuf::parse_from_bytes;
-use tokio::{self, runtime::current_thread::Runtime};
+use tokio::{self, runtime::Runtime};
 use regex::Regex;
+use std::iter::Iterator;
 
 lazy_static! {
     static ref APP_KEY_RE: Regex =
         Regex::new(
             r"application|([A-Z0-9]{8}-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{12})"
         ).unwrap();
+}
+
+async fn to_future<T> (t:T) -> T {
+    t
 }
 
 pub trait EventHandler {
@@ -34,7 +39,7 @@ pub trait EventHandler {
         &self,
         key: Option<Vec<u8>>,
         event: PushNotification,
-    ) -> Box<Future<Item = (), Error = ()> + 'static + Send>;
+    ) -> Box<dyn Future<Output=Result<(),()>> + 'static + Send + Unpin>;
 
     /// Try to send a http request. If key parameter is set, the response
     /// will be sent with the same routing key.
@@ -42,7 +47,7 @@ pub trait EventHandler {
         &self,
         key: Option<Vec<u8>>,
         event: HttpRequest,
-    ) -> Box<Future<Item = (), Error = ()> + 'static + Send>;
+    ) -> Box<dyn Future<Output=Result<(),()>> + 'static + Send + Unpin>;
 
     /// Handle tenant configuration for connection setup.
     fn handle_config(
@@ -196,27 +201,46 @@ impl<H: EventHandler + Send + Sync + 'static> RequestConsumer<H> {
     fn handler(
         &self,
         consumer: StreamConsumer,
-        control: oneshot::Receiver<()>,
-        process_event: &Fn(BorrowedMessage) -> Result<(), ()>
+        mut control: oneshot::Receiver<()>,
+        process_event: &dyn Fn(BorrowedMessage) -> Result<(), ()>
     ) -> Result<(), ()> {
-        let mut core = Runtime::new().unwrap();
+        let core = Runtime::new().unwrap();
 
-        let processed_stream = consumer
-            .start()
-            .filter_map(|result| match result {
-                Ok(msg) => Some(msg),
-                Err(e) => {
-                    warn!("Error while receiving from Kafka: {:?}", e);
-                    None
+        let processed_stream = consumer.start()
+            .for_each(|result|  {
+                match result {
+                    Ok(msg) => {
+                        match process_event(msg){
+                            Ok(_) => (),
+                            Err(_) => ()
+                        };
+                    }
+
+                    Err(e) => {
+                        warn!("Error while receiving from Kafka: {:?}", e);
+                    }
                 }
-            })
-            .for_each(|msg| process_event(msg))
-            .select2(control)
-            .then(|_| consumer.commit_consumer_state(CommitMode::Sync));
+                to_future(())
+            });
+        core.block_on(
+            async {
+                let _ = select! {
+                    _a = processed_stream.fuse() => (),
+                    _b = control => (),
+                };
+            }
+        );
+        match consumer.commit_consumer_state(CommitMode::Sync){
+            Ok(_) => Ok(()),
+            Err(_) => Err(())
+        }
 
-        core.block_on(processed_stream).unwrap();
 
-        Ok(())
+            /*.select2(control)
+            .then(|_| consumer.commit_consumer_state(CommitMode::Sync)),*/
+
+        //core.block_on(processed_stream.then(|_| consumer.commit_consumer_state(CommitMode::Sync))).unwrap();
+
     }
 
     fn handle_push(&self, msg: &BorrowedMessage) {

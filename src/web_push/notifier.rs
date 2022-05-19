@@ -1,38 +1,71 @@
-use std::time::Duration;
+//use std::time::Duration;
 use web_push::*;
 
-use futures::{Future, future::{err, Either}};
+use futures::{Future};
 
 use common::events::push_notification::PushNotification;
+use common::kafka::{Whoosh, GenericRor};
+
+use std::sync::{Arc,Mutex};
+//use serde::de::Unexpected::Option;
+//use slog::MutexDrainError::Mutex;
+//use tokio::runtime::Runtime;
+use std::thread;
+
+use core::option::Option;
 
 pub struct Notifier {
-    client: WebPushClient,
+    client: Arc<WebPushClient>,
 }
 
 impl Notifier {
     pub fn new() -> Notifier {
         Notifier {
-            client: WebPushClient::new().unwrap(),
+            client: Arc::new(WebPushClient::new().unwrap()),
         }
+    }
+
+    pub fn notify_helper(
+        &self,
+        message: WebPushMessage
+    ) -> Box<dyn Future<Output=Result<(),Result<Arc<WebPushError>,()>>> + Unpin + Send + 'static> {
+        let mute = Arc::new(Mutex::<Option<Option<Option<Arc<WebPushError>>>>>::new(None));
+        let ret = Box::new(Whoosh::new(mute.clone()));
+        /*let thread = match Runtime::new(){
+            Ok(x) => {x}
+            Err(_) => {
+                *mute.lock().unwrap() = Some(Some(None));
+                return ret;
+            }
+        };*/
+        let clien = self.client.clone();
+        thread::spawn(|| async move{
+            let a = match clien.send(message).await {
+                Ok(_) => Some(None),
+                Err(x) => Some(Some(Arc::new(x.clone())))
+            };
+
+            *mute.lock().unwrap() = Some(a)
+        });
+        return ret;
+
+
     }
 
     pub fn notify(
         &self,
         event: &PushNotification,
-        fcm_api_key: Option<&String>,
-    ) -> impl Future<Item = (), Error = WebPushError> {
-        match Self::build_message(&event, fcm_api_key) {
-            Ok(message) => Either::A(
-                self.client
-                    .send_with_timeout(message, Duration::from_secs(2)),
-            ),
-            Err(e) => Either::B(err(e)),
-        }
+        fcm_api_key: Option<&VapidSignature>,
+    ) -> Box<dyn Future<Output=Result<(),Result<Arc<WebPushError>,()>>> + Unpin + Send + 'static> {
+        if let Ok(message) =  Self::build_message(&event, fcm_api_key) {
+            return self.notify_helper(message);
+        };
+        return Box::new(GenericRor::new(WebPushError::ServerError(None)));
     }
 
     fn build_message(
         pn: &PushNotification,
-        fcm_api_key: Option<&String>,
+        fcm_api_key: Option<&VapidSignature>,
     ) -> Result<WebPushMessage, WebPushError> {
         let web = pn.get_web();
 
@@ -42,7 +75,7 @@ impl Notifier {
         let mut message = WebPushMessageBuilder::new(&subscription_info)?;
 
         if web.has_payload() {
-            message.set_payload(ContentEncoding::AesGcm, web.get_payload().as_bytes());
+            message.set_payload(ContentEncoding::Aes128Gcm, web.get_payload().as_bytes());
         }
 
         if web.has_ttl() {
@@ -50,7 +83,7 @@ impl Notifier {
         }
 
         if let Some(key) = fcm_api_key {
-            message.set_gcm_key(key);
+            message.set_vapid_signature(key.clone());
         }
 
         message.build()

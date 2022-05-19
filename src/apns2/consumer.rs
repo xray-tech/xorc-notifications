@@ -1,9 +1,6 @@
-use futures::{Future, future::ok};
+use futures::{Future, FutureExt, future::{ok, err}};
 
-use std::{
-    collections::HashMap,
-    sync::RwLock,
-};
+use std::{collections::HashMap, sync::{RwLock, Arc, Mutex}, thread};
 
 use common::{
     events::{
@@ -25,18 +22,20 @@ use common::{
 
 use a2::{client::Endpoint, error::Error};
 
-use notifier::Notifier;
-use producer::ApnsProducer;
+use crate::notifier::Notifier;
+use crate::producer::ApnsProducer;
+
+use super::common::kafka::{FutureMime};
 
 pub struct ApnsHandler {
-    producer: ApnsProducer,
-    notifiers: RwLock<HashMap<String, Notifier>>,
+    producer: Arc<ApnsProducer>,
+    notifiers: RwLock<HashMap<String, Arc<Notifier>>>,
 }
 
 impl ApnsHandler {
     pub fn new() -> ApnsHandler {
         let notifiers = RwLock::new(HashMap::new());
-        let producer = ApnsProducer::new();
+        let producer = Arc::new(ApnsProducer::new());
 
         ApnsHandler {
             producer,
@@ -53,12 +52,12 @@ impl ApnsHandler {
     ) -> Result<(), Error> {
         let mut pkcs12 = certificate.get_pkcs12();
 
-        let notifier = Notifier::certificate(
+        let notifier = Arc::new(Notifier::certificate(
         &mut pkcs12,
             certificate.get_password(),
             endpoint,
             apns_topic,
-        )?;
+        )?);
 
         let mut notifiers = self.notifiers.write().unwrap();
         notifiers.insert(application_id.to_string(), notifier);
@@ -75,13 +74,13 @@ impl ApnsHandler {
     ) -> Result<(), Error> {
         let mut pkcs8 = token.get_pkcs8();
 
-        let notifier = Notifier::token(
+        let notifier = Arc::new(Notifier::token(
             &mut pkcs8,
             token.get_key_id(),
             token.get_team_id(),
             endpoint,
             apns_topic,
-        )?;
+        )?);
 
         let mut notifiers = self.notifiers.write().unwrap();
         notifiers.insert(application_id.to_string(), notifier);
@@ -110,32 +109,51 @@ impl EventHandler for ApnsHandler {
         &self,
         key: Option<Vec<u8>>,
         event: PushNotification,
-    ) -> Box<Future<Item = (), Error = ()> + 'static + Send> {
+    ) -> Box<dyn Future<Output=Result<(),()>> + 'static + Send + Unpin> {
         let producer = self.producer.clone();
         let timer = RESPONSE_TIMES_HISTOGRAM.start_timer();
 
         CALLBACKS_INFLIGHT.inc();
 
         if let Some(notifier) = self.notifiers.read().unwrap().get(event.get_universe()) {
-            let notification_send = notifier
-                .notify(&event)
-                .then(move |result| {
-                    timer.observe_duration();
-                    CALLBACKS_INFLIGHT.dec();
+            let dat = notifier.clone();
+            let mute = Arc::new(Mutex::<Option<Result<(),()>>>::new(None));
+            let ret = FutureMime::new(mute.clone());
+            thread::spawn(|| async  move{
+                let notification_send = dat.notify(event.clone());
+                let b = notification_send.then(move |result| {
+                        timer.observe_duration();
+                        CALLBACKS_INFLIGHT.dec();
+                        match result {
+                            Ok(x) => {
+                                match x {
+                                    Ok(x) => {
+                                        if let Some(t) = x.error {
+                                            producer.handle_err_reason(key, event, &t.reason)
+                                        }
+                                        else {
+                                            producer.handle_ok(key, event)
+                                        }
+                                    },
+                                    Err(e) => producer.handle_err(key, event, &e)
+                                }
+                                //
+                            },
+                            //Ok(Err(e)) => ,
+                            Err(_) => producer.handle_fatal(key, event),
+                        }
+                    }).then(|_| ok(())).await;
+                *mute.lock().unwrap() = Some(b);
+                }
+            );
 
-                    match result {
-                        Ok(_) => producer.handle_ok(key, event),
-                        Err(Error::ResponseError(e)) => producer.handle_err(key, event, e),
-                        Err(e) => producer.handle_fatal(key, event, e),
-                    }
-                })
-                .then(|_| ok(()));
 
-            Box::new(notification_send)
+            Box::new(ret)
+
         } else {
             let connection_error = producer
-                .handle_fatal(key, event, Error::ConnectionError)
-                .then(|_| ok(()));
+                .handle_fatal(key, event)//BLAH need to fiiiix
+                .then(|_| err(()));
 
             Box::new(connection_error)
         }
@@ -145,9 +163,9 @@ impl EventHandler for ApnsHandler {
         &self,
         _: Option<Vec<u8>>,
         _: HttpRequest,
-    ) -> Box<Future<Item=(), Error=()> + 'static + Send> {
+    ) -> Box<dyn Future<Output=Result<(),()>> + 'static + Send + Unpin> {
         warn!("We don't handle http request events here");
-        Box::new(ok(()))
+        Box::new(err(()))
     }
 
     fn handle_config(&self, id: &str, application: Option<Application>) {

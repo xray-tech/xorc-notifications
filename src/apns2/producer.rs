@@ -1,8 +1,4 @@
-use a2::{
-    Error,
-    Response,
-    ErrorReason::*,
-};
+use a2::{Error, ErrorReason::*, ErrorReason};
 
 use common::{
     events::{
@@ -20,7 +16,7 @@ use common::{
 };
 
 use heck::SnakeCase;
-use CONFIG;
+use crate::CONFIG;
 
 pub struct ApnsProducer {
     producer: ResponseProducer,
@@ -51,31 +47,25 @@ impl ApnsProducer {
         self.producer.publish(key, &result)
     }
 
-    pub fn handle_err(
+    pub fn handle_err_reason(
         &self,
         key: Option<Vec<u8>>,
         event: PushNotification,
-        response: Response
+        error: &ErrorReason
     ) -> DeliveryFuture
     {
-        let reason = response.error.as_ref()
-            .map(|ref error| {
-                format!("{:?}", error.reason)
-            });
-
         error!(
             "Error sending a push notification";
             &event,
             "successful" => false,
-            "reason" => reason
+            "reason" => format!("{:?}", error)
         );
 
-        let response_action =
-            if let Some(ref reason) = response.error.map(|e| e.reason) {
-                let error_label = format!("{:?}", reason).to_snake_case();
+        let response_action = {
+                let error_label = format!("{:?}", error).to_snake_case();
                 CALLBACKS_COUNTER.with_label_values(&[&error_label]).inc();
 
-                match reason {
+                match error {
                     Unregistered | DeviceTokenNotForTopic | BadDeviceToken =>
                         ResponseAction::UnsubscribeEntity,
                     InternalServerError | Shutdown | ServiceUnavailable | ExpiredProviderToken | Forbidden =>
@@ -83,10 +73,37 @@ impl ApnsProducer {
                     _ =>
                         ResponseAction::None,
                 }
-            } else {
-                CALLBACKS_COUNTER.with_label_values(&["Unknown"]).inc();
-                ResponseAction::None
             };
+
+        let result: PushResult = (event, response_action).into();
+        self.producer.publish(key, &result)
+    }
+
+    pub fn handle_err(
+        &self,
+        key: Option<Vec<u8>>,
+        event: PushNotification,
+        error: &Error
+    ) -> DeliveryFuture
+    {
+        error!(
+            "Error sending a push notification";
+            &event,
+            "successful" => false,
+            "reason" => format!("{:?}", error)
+        );
+
+        let response_action = {
+            let error_label = format!("{:?}", error).to_snake_case();
+            CALLBACKS_COUNTER.with_label_values(&[&error_label]).inc();
+
+            match error {
+                Error::ConnectionError(_) | Error::SignerError(_) | Error::ResponseError(_) =>
+                    ResponseAction::Retry,
+                _ =>
+                    ResponseAction::None,
+            }
+        };
 
         let result: PushResult = (event, response_action).into();
         self.producer.publish(key, &result)
@@ -96,10 +113,9 @@ impl ApnsProducer {
         &self,
         key: Option<Vec<u8>>,
         event: PushNotification,
-        error: Error
     ) -> DeliveryFuture
     {
-        let status_label = format!("{:?}", error).to_snake_case();
+        let status_label = format!("timeout").to_snake_case();
         let result: PushResult = (event, ResponseAction::Retry).into();
 
         CALLBACKS_COUNTER.with_label_values(&[&status_label]).inc();

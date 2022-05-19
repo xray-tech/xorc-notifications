@@ -1,10 +1,18 @@
-use http::header;
 use prometheus::{self, CounterVec, Encoder, Gauge, Histogram, TextEncoder};
 use std::env;
 
-use hyper::{rt, Body, Request, Response, Server, service::service_fn_ok};
+use hyper::{
+    Body,
+    Error,
+    Request,
+    Response,
+    server::Server,
+    service::{make_service_fn, service_fn},
+    header};
 
-use futures::{Future, sync::oneshot::Receiver};
+use tokio::runtime::Runtime;
+
+use futures::{channel::oneshot::Receiver};
 
 lazy_static! {
     pub static ref CALLBACKS_COUNTER: CounterVec = register_counter_vec!(
@@ -42,16 +50,16 @@ impl StatisticsServer {
         let encoder = TextEncoder::new();
         let metric_families = prometheus::gather();
         let mut buffer = vec![];
-        let mut builder = Response::builder();
+        let builder = Response::builder();
 
         encoder.encode(&metric_families, &mut buffer).unwrap();
 
-        builder.header(header::CONTENT_TYPE, encoder.format_type());
-
-        builder.body(buffer.into()).unwrap()
+        builder
+            .header(header::CONTENT_TYPE, encoder.format_type())
+            .body(buffer.into()).unwrap()
     }
 
-    pub fn handle(rx: Receiver<()>) {
+    pub fn handle(_rx: Receiver<()>) {
         let port = match env::var("PORT") {
             Ok(val) => val,
             Err(_) => String::from("8081"),
@@ -59,10 +67,19 @@ impl StatisticsServer {
 
         let addr = format!("0.0.0.0:{}", port).parse().unwrap();
 
-        let server = Server::bind(&addr)
-            .serve(|| service_fn_ok(Self::prometheus))
-            .map_err(|e| eprintln!("server error: {}", e));
+        let make_svc = make_service_fn(|_| async {
+            Ok::<_, Error>(service_fn(|req| async {
+                Ok::<_, Error>(Self::prometheus(req))
+            }))
+        });
 
-        rt::run(server.select2(rx).then(move |_| Ok(())));
+        let server = Server::bind(&addr)
+            .serve(make_svc);
+            //.map_err(|e| eprintln!("server error: {}", e));
+
+        match Runtime::new(){
+            Ok(x) => {x.spawn(server/*.select2(rx).then(move |_| Ok(()))*/);}
+            Err(_) => {println!("WOOPS! HANDLE FAILED!")}
+        };
     }
 }

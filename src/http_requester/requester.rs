@@ -4,30 +4,27 @@ use hyper::{
     Body,
     client::{Client, HttpConnector},
 };
-use futures::{
-    Future,
-    stream::Stream,
-    future::err,
-};
 use std::{
     collections::HashMap,
     time::Duration,
 };
 use common::events::http_request::HttpRequest;
-use http::HeaderMap;
+use hyper::HeaderMap;
 use hyper_tls::HttpsConnector;
 use bytes::Bytes;
-use tokio_timer::Timer;
+use hyper::body::HttpBody;
+
 
 pub struct Requester {
     client: Client<HttpsConnector<HttpConnector>>,
-    timer: Timer,
+    //timer: Timer<None>,
 }
 
 #[derive(Debug)]
 pub enum RequestError {
     Timeout,
     Connection,
+    Thread,
 }
 
 pub struct HttpResult {
@@ -42,42 +39,92 @@ impl Requester {
         client.keep_alive(true);
 
         Requester {
-            client: client.build(HttpsConnector::new(4).unwrap()),
-            timer: Timer::default(),
+            client: client.build(HttpsConnector::new()/*.unwrap()*/),
+            //timer: Timer::default(),
         }
     }
 
-    pub fn request(
+    pub async fn request(
         &self,
         event: &HttpRequest,
-    ) -> impl Future<Item=HttpResult, Error=RequestError> + 'static + Send
+    ) -> Result<HttpResult,RequestError>
     {
-        let mut builder = Request::builder();
-        builder.method(event.get_request_type().as_ref());
+        let mut builder = Request::builder()
+            .method(event.get_request_type().as_ref());
 
         for (k, v) in event.get_headers().iter() {
-            builder.header(k.as_bytes(), v.as_bytes());
+            builder = builder.header(k.as_bytes(), v.as_bytes());
         }
 
         if event.get_params().is_empty() {
-            builder.uri(event.get_uri());
+            builder = builder.uri(event.get_uri());
         } else {
-            builder.uri(Self::uri_with_params(
+            builder = builder.uri(Self::uri_with_params(
                 event.get_uri(),
                 event.get_params(),
             ));
         };
 
-        let request: Request<Body> =
-            builder.body(Body::from(event.get_body().as_bytes().to_vec())).unwrap();
+        let request: Request<Body> = builder.body(Body::from(event.get_body().as_bytes().to_vec())).unwrap();
 
-        let timeout = self.timer.sleep(Duration::from_millis(event.get_timeout()))
-            .then(|_| err(RequestError::Timeout));
+        let timeout = tokio::time::timeout(
+            Duration::from_millis(event.get_timeout()),
+            self.client.request(request));
 
-        self.client
-            .request(request)
-            .map_err(|_| { RequestError::Connection })
-            .select(timeout)
+
+        return match timeout.await {
+            Ok(x)=>{
+                match x {
+                    Ok(t)=>{
+                        let (a,mut b) = t.into_parts();
+
+                        let bod = b.data().await;
+
+                        let by = match bod {
+                            Some(x)=> {
+                                match x {
+                                    Ok(x) => x,
+                                    Err(_) => {return Err(RequestError::Thread);}
+                                }
+                            }
+                            None => {return Err(RequestError::Thread);}
+                        };
+
+
+                        Ok(HttpResult{
+                            code:a.status,
+                            body: by,
+                            headers:a.headers
+                        })
+                    }
+                    Err(_) => {
+                        return Err(RequestError::Connection)
+                    }
+                }
+            }
+            Err(_) =>{
+                return Err(RequestError::Timeout);
+            }
+            /*Either::Left((value1, _)) => {
+                match value1 {
+                    Ok(x) => {
+                        let (parts, body) = x.into_parts();
+                        Ok(HttpResult {
+                            code: parts.status,
+                            body: body.try_into(),
+                            headers: parts.headers
+                        })
+                    }
+                    Err(_) => Err(RequestError::Connection)
+                }
+            }
+            Either::Right((value2, _)) => Err(RequestError::Timeout),*/
+        }
+
+
+
+
+            /*.select(timeout)
             .map_err(|_| { RequestError::Timeout })
             .and_then(move |(response, _)| {
                 let (parts, body) = response.into_parts();
@@ -92,7 +139,7 @@ impl Requester {
                             headers: parts.headers
                         }
                     })
-            })
+            })*/
     }
 
     fn uri_with_params(uri: &str, params: &HashMap<String, String>) -> String {

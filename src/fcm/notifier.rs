@@ -9,12 +9,12 @@ pub struct Notifier {
 impl Notifier {
     pub fn new() -> Notifier {
         Notifier {
-            client: Client::new().unwrap(),
+            client: Client::new()/*.unwrap()*/,
         }
     }
 
-    pub fn notify(&self, event: &PushNotification, api_key: &str) -> FutureResponse {
-        self.client.send(Self::gen_payload(event, api_key))
+    pub async fn notify(&self, event: &PushNotification, api_key: &str) -> Result<FcmResponse,FcmError> {
+        self.client.send(Self::gen_payload(event, api_key)).await
     }
 
     fn gen_payload<'a>(pn: &'a PushNotification, api_key: &'a str) -> Message<'a> {

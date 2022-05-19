@@ -11,9 +11,9 @@ use common::{
     metrics::*
 };
 use std::{collections::HashMap, str};
-use requester::{HttpResult, RequestError};
+use crate::requester::{HttpResult, RequestError};
 
-use CONFIG;
+use crate::CONFIG;
 
 pub struct HttpResponseProducer {
     producer: ResponseProducer,
@@ -75,7 +75,7 @@ impl HttpResponseProducer {
                     "response" => &response
                 );
             }
-            Err(RequestError::Timeout) => {
+            Err(RequestError::Timeout) | Err(RequestError::Thread) => {
                 CALLBACKS_COUNTER.with_label_values(&["timeout"]).inc();
                 response.set_connection_error(HttpResponse_SocketError::Timeout);
 

@@ -4,10 +4,21 @@ use serde_json::error::Error as JsonError;
 use serde_json::{self, Value};
 use std::io::Read;
 use std::time::Duration;
-use tokio_timer::Timeout;
+use tokio::time::Instant;
 
-use a2::{client::{Client, Endpoint, FutureResponse}, error::Error,
+//use tokio_timer::Timeout;
+
+use a2::{client::{Client, Endpoint}, error::Error,
          request::{notification::*, payload::Payload}};
+
+//use fcm::FutureResponse;
+//use tokio::time::timeout;
+use tokio::time;
+//use tokio_timer::Timeout;
+use tokio::time::Timeout;
+use futures::Future;
+use a2::response::Response;
+use std::sync::{Arc};
 
 enum NotifierType {
     Token,
@@ -15,7 +26,7 @@ enum NotifierType {
 }
 
 pub struct Notifier {
-    client: Client,
+    client: Arc<Client>,
     topic: String,
     notifier_type: NotifierType,
 }
@@ -43,7 +54,7 @@ impl Notifier {
     where
         R: Read,
     {
-        let client = Client::certificate(pkcs12, password, endpoint)?;
+        let client = Arc::new(Client::certificate(pkcs12, password, endpoint)?);
         let notifier_type = NotifierType::Certificate;
         CERTIFICATE_CONSUMERS.inc();
 
@@ -64,7 +75,7 @@ impl Notifier {
     where
         R: Read,
     {
-        let client = Client::token(pkcs8, key_id, team_id, endpoint)?;
+        let client = Arc::new(Client::token(pkcs8, key_id, team_id, endpoint)?);
         let notifier_type = NotifierType::Token;
         TOKEN_CONSUMERS.inc();
 
@@ -75,8 +86,32 @@ impl Notifier {
         })
     }
 
-    pub fn notify(&self, event: &PushNotification) -> Timeout<FutureResponse> {
-        self.client.send_with_timeout(self.gen_payload(event), Duration::from_secs(3))
+    /*pub fn notify_helper(&self, event: PushNotification) -> Box<dyn Future<Output=Result<Arc<Result<Result<Response,Error>,()>>,()>> + Unpin + Send + 'static> {
+        let mute = Arc::new(Mutex::<Option<Arc<Result<Result<Response,Error>,()>>>>::new(None));
+        let ret = Box::new(GenericFut::<Result<Result<Response,Error>,()>>::new(mute.clone()));
+
+        let thread = match Runtime::new() {
+            Ok(x) => x,
+            Err(_) => {
+                *mute.lock().unwrap() = Some(Arc::new(Err(())));
+                return ret;
+            }
+        };
+        let cli = self.client.clone();
+        thread.spawn(async move {
+            let val = cli.send(payload).await;
+            *mute.lock().unwrap() = Some(Arc::new(Ok(val)));
+        });
+        return ret;
+
+    }*/
+
+    pub fn notify(&self, event: PushNotification) -> Timeout<impl Future<Output = Result<Response,Error>>> {
+        let payload = self.gen_payload(&event);
+        let a = self.client.send(payload);
+        return time::timeout_at(Instant::now() + Duration::from_secs(3),a);
+        //Duration::from_secs(3)
+        //make timeout w/ duration & future
     }
 
     fn gen_payload<'a>(&'a self, event: &'a PushNotification) -> Payload<'a> {
@@ -89,8 +124,8 @@ impl Notifier {
 
         if headers.has_apns_priority() {
             match headers.get_apns_priority() {
-                10 => options.apns_priority = Priority::High,
-                _ => options.apns_priority = Priority::Normal,
+                10 => options.apns_priority = Some(Priority::High),
+                _ => options.apns_priority = Some(Priority::Normal),
             }
         }
         if event.get_header().has_correlation_id() {

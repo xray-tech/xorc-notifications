@@ -7,6 +7,7 @@ extern crate futures;
 extern crate hyper;
 extern crate tokio_signal;
 extern crate web_push;
+extern crate core;
 
 mod consumer;
 mod notifier;

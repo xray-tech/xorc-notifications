@@ -10,7 +10,7 @@ use common::{
     metrics::CALLBACKS_COUNTER
 };
 
-use CONFIG;
+use crate::CONFIG;
 
 use web_push::{*, WebPushError::*};
 
@@ -77,7 +77,8 @@ impl WebPushProducer {
 
         let response_action =
             match error {
-                ServerError(_) | TimeoutError       => ResponseAction::Retry,
+                ServerError(_) => ResponseAction::Retry,
+                //TimeoutError => ResponseAction::Retry, //commented this out bc this seems to be a deprecated error.
                 EndpointNotFound | EndpointNotValid => ResponseAction::UnsubscribeEntity,
                 _                                   => ResponseAction::None,
             };
