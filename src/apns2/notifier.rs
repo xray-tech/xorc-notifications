@@ -110,8 +110,6 @@ impl Notifier {
         let payload = self.gen_payload(&event);
         let a = self.client.send(payload);
         return time::timeout_at(Instant::now() + Duration::from_secs(3),a);
-        //Duration::from_secs(3)
-        //make timeout w/ duration & future
     }
 
     fn gen_payload<'a>(&'a self, event: &'a PushNotification) -> Payload<'a> {

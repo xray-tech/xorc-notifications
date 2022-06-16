@@ -1,6 +1,6 @@
 [kafka]
-input_topic   = "rpc.push-notification"
-config_topic  = "config.push-notification"
+input_topic   = "production.apns"
+config_topic  = "production.config"
 output_topic  = "rpc.responses"
 group_id      = "test.consumers.apns"
-brokers       = "kafka:9092"
+brokers       = "localhost:9092"

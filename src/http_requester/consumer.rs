@@ -58,7 +58,7 @@ impl EventHandler for HttpRequestHandler {
             let mute = Arc::new(Mutex::<Option<Result<(),()>>>::new(None));
             let ret = mute.clone();
             let req = self.requester.clone();
-            thread::spawn(|| async move {
+            tokio::spawn(async move {
                 let b = event.clone();
                 let a =req.request(&event)
                     .then(move |response| {

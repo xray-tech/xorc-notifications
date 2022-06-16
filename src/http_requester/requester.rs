@@ -105,41 +105,7 @@ impl Requester {
             Err(_) =>{
                 return Err(RequestError::Timeout);
             }
-            /*Either::Left((value1, _)) => {
-                match value1 {
-                    Ok(x) => {
-                        let (parts, body) = x.into_parts();
-                        Ok(HttpResult {
-                            code: parts.status,
-                            body: body.try_into(),
-                            headers: parts.headers
-                        })
-                    }
-                    Err(_) => Err(RequestError::Connection)
-                }
-            }
-            Either::Right((value2, _)) => Err(RequestError::Timeout),*/
         }
-
-
-
-
-            /*.select(timeout)
-            .map_err(|_| { RequestError::Timeout })
-            .and_then(move |(response, _)| {
-                let (parts, body) = response.into_parts();
-
-                body
-                    .concat2()
-                    .map_err(|_| { RequestError::Connection })
-                    .map(move |chunk| {
-                        HttpResult {
-                            code: parts.status,
-                            body: chunk.into_bytes(),
-                            headers: parts.headers
-                        }
-                    })
-            })*/
     }
 
     fn uri_with_params(uri: &str, params: &HashMap<String, String>) -> String {

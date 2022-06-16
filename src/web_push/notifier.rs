@@ -39,7 +39,7 @@ impl Notifier {
             }
         };*/
         let clien = self.client.clone();
-        thread::spawn(|| async move{
+        tokio::spawn(async move{
             let a = match clien.send(message).await {
                 Ok(_) => Some(None),
                 Err(x) => Some(Some(Arc::new(x.clone())))

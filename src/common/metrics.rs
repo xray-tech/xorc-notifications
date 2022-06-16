@@ -1,7 +1,8 @@
 use prometheus::{self, CounterVec, Encoder, Gauge, Histogram, TextEncoder};
-use std::env;
+use std::{env, thread};
 
 use hyper::{
+    rt,
     Body,
     Error,
     Request,
@@ -10,9 +11,8 @@ use hyper::{
     service::{make_service_fn, service_fn},
     header};
 
-use tokio::runtime::Runtime;
-
 use futures::{channel::oneshot::Receiver};
+use tokio::runtime;
 
 lazy_static! {
     pub static ref CALLBACKS_COUNTER: CounterVec = register_counter_vec!(
@@ -60,7 +60,7 @@ impl StatisticsServer {
     }
 
     pub fn handle(_rx: Receiver<()>) {
-        let port = match env::var("PORT") {
+        /*let port = match env::var("PORT") {
             Ok(val) => val,
             Err(_) => String::from("8081"),
         };
@@ -76,10 +76,11 @@ impl StatisticsServer {
         let server = Server::bind(&addr)
             .serve(make_svc);
             //.map_err(|e| eprintln!("server error: {}", e));
-
-        match Runtime::new(){
-            Ok(x) => {x.spawn(server/*.select2(rx).then(move |_| Ok(()))*/);}
-            Err(_) => {println!("WOOPS! HANDLE FAILED!")}
-        };
+        let core = runtime::Runtime::new().expect("Failed to create runtime for metrics server.");
+        core.block_on( async move {server.await}/*.select2(rx).then(move |_| Ok(()))*/);
+        */
+        // This is all getting commented out because of a dumb-bug: there is no reactor running, must be called from the context of a Tokio 1.x runtime
+        //if ya figure out how to fix this (potentially one of the tokio-compat crates) tell me, fix it yourself, or whatever.
     }
+
 }

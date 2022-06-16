@@ -14,9 +14,10 @@ use crate::events::{
 };
 use futures::{Future, FutureExt, channel::oneshot, StreamExt, select};
 use protobuf::parse_from_bytes;
-use tokio::{self, runtime::Runtime};
+use tokio::{self, runtime::Runtime, spawn};
 use regex::Regex;
 use std::iter::Iterator;
+use std::thread;
 
 lazy_static! {
     static ref APP_KEY_RE: Regex =
@@ -104,19 +105,35 @@ impl<H: EventHandler + Send + Sync + 'static> RequestConsumer<H> {
         info!("Starting config processing");
 
         self.handler(consumer, control, &|msg: BorrowedMessage| {
+
+            info!("Handling config!");
+
             let convert_key = msg.key().and_then(|key| {
                 String::from_utf8(key.to_vec()).ok()
             });
 
             match convert_key {
                 Some(ref key) if APP_KEY_RE.is_match(key) => {
+
+                    info!("StartParseApplication");
+
                     let type_parsing = msg.payload().and_then(|payload| {
                         parse_from_bytes::<RequestWrapper>(&payload).ok()
                     });
 
-                    let application_id: &str = key
+                    let veckey = key
                         .split('|')
-                        .collect::<Vec<&str>>()[1];
+                        .collect::<Vec<&str>>();
+
+                    let application_id :&str =
+                        if let Some(t) = veckey.get(1){t}
+                        else if let Some(t) = veckey.get(0){t}
+                        else {return Err(())};
+
+
+                    /*let application_id: &str = key
+                        .split('|')
+                        .collect::<Vec<&str>>()[1];*/
 
                     match type_parsing {
                         Some(ref decoder) => {
@@ -179,6 +196,7 @@ impl<H: EventHandler + Send + Sync + 'static> RequestConsumer<H> {
 
             match type_parsing {
                 Some(ref decoder) => {
+                    println!("Parsed Message!");
                     match decoder.get_header().get_field_type() {
                         "notification.PushNotification" =>
                             self.handle_push(&msg),
@@ -202,7 +220,7 @@ impl<H: EventHandler + Send + Sync + 'static> RequestConsumer<H> {
         &self,
         consumer: StreamConsumer,
         mut control: oneshot::Receiver<()>,
-        process_event: &dyn Fn(BorrowedMessage) -> Result<(), ()>
+        process_event: &(dyn (Fn(BorrowedMessage) -> Result<(), ()>) + Send)
     ) -> Result<(), ()> {
         let core = Runtime::new().unwrap();
 
@@ -210,6 +228,7 @@ impl<H: EventHandler + Send + Sync + 'static> RequestConsumer<H> {
             .for_each(|result|  {
                 match result {
                     Ok(msg) => {
+                        println!("ProcessingMessage~");
                         match process_event(msg){
                             Ok(_) => (),
                             Err(_) => ()
@@ -222,9 +241,9 @@ impl<H: EventHandler + Send + Sync + 'static> RequestConsumer<H> {
                 }
                 to_future(())
             });
-        core.block_on(
+        let a = core.block_on(
             async {
-                let _ = select! {
+                let _ =select! {
                     _a = processed_stream.fuse() => (),
                     _b = control => (),
                 };

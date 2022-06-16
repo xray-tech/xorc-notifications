@@ -119,7 +119,7 @@ impl EventHandler for ApnsHandler {
             let dat = notifier.clone();
             let mute = Arc::new(Mutex::<Option<Result<(),()>>>::new(None));
             let ret = FutureMime::new(mute.clone());
-            thread::spawn(|| async  move{
+            tokio::spawn(async  move{
                 let notification_send = dat.notify(event.clone());
                 let b = notification_send.then(move |result| {
                         timer.observe_duration();
@@ -137,9 +137,7 @@ impl EventHandler for ApnsHandler {
                                     },
                                     Err(e) => producer.handle_err(key, event, &e)
                                 }
-                                //
                             },
-                            //Ok(Err(e)) => ,
                             Err(_) => producer.handle_fatal(key, event),
                         }
                     }).then(|_| ok(())).await;
@@ -152,7 +150,7 @@ impl EventHandler for ApnsHandler {
 
         } else {
             let connection_error = producer
-                .handle_fatal(key, event)//BLAH need to fiiiix
+                .handle_fatal(key, event)
                 .then(|_| err(()));
 
             Box::new(connection_error)
