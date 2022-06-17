@@ -1,6 +1,6 @@
 [kafka]
-input_topic   = "rpc.http"
-config_topic  = "config.push-notification"
+input_topic   = "production.http"
+config_topic  = "production.config"
 output_topic  = "rpc.responses"
 group_id      = "http-requester-test"
-brokers       = "kafka:9092"
+brokers       = "localhost:9092"
